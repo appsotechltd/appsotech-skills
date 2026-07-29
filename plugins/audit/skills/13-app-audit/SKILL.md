@@ -21,7 +21,7 @@ decides the ceiling: `attested` answers are capped at 2 by the scorer, and the
 cap is not negotiable. Collect first, score second.
 
 All paths below are relative to this skill's own directory — wherever it is
-installed (`plugins/app-audit/skills/13-app-audit/` inside this repository
+installed (`plugins/audit/skills/13-app-audit/` inside this repository
 when run as a plugin, or `~/.claude/skills/13-app-audit/` when copy-installed
 per the README) — run commands from there. Load each reference file only
 when its phase says to; a run that stops after Layer 4 must never load the
@@ -268,7 +268,7 @@ audit/<date>/
   PowerShell, set `MSYS_NO_PATHCONV=1`, or double the leading slash.
 - **`node --test <directory>` throws `MODULE_NOT_FOUND` on Node 24.** Always
   glob the files explicitly:
-  `node --test plugins/app-audit/skills/13-app-audit/tests/*.test.mjs`.
+  `node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs`.
 - **Three tests shell out to real `npm` and `go` on PATH** (`npm audit is
   actually invoked`, `go list runs`, `a partial npm audit failure across
   roots reconciles`) — deliberate integration tests, no mocking. Contributors

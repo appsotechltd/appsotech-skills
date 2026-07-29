@@ -7,7 +7,7 @@ const SKILL = join(import.meta.dirname, '..');
 const REF = (f) => readFileSync(join(SKILL, 'references', f), 'utf8');
 
 // The repo root (five levels up from tests/: tests -> 13-app-audit -> skills
-// -> app-audit -> plugins -> repo root), same derivation manifests.test.mjs
+// -> audit -> plugins -> repo root), same derivation manifests.test.mjs
 // already uses, to reach the standalone root-level methodology document.
 const ROOT = join(import.meta.dirname, '..', '..', '..', '..', '..');
 const ROOT_DOC = () => readFileSync(join(ROOT, '13-app-audit', 'app-audit.md'), 'utf8');

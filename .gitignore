@@ -1,5 +1,5 @@
 node_modules/
-audit/
+/audit/
 *.log
 .DS_Store
 .superpowers/

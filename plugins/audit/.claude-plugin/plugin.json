@@ -1,0 +1,10 @@
+{
+  "name": "audit",
+  "description": "Audit and assessment skills for codebases and running systems: weighted scores, hard-gate verdicts, findings registers and sequenced remediation plans",
+  "version": "0.2.0",
+  "author": { "name": "Appsotech Limited", "email": "appsotechltd@gmail.com" },
+  "homepage": "https://github.com/appsotechltd/appsotech-skills",
+  "repository": "https://github.com/appsotechltd/appsotech-skills",
+  "license": "MIT",
+  "keywords": ["audit", "assessment", "security", "production-readiness", "reliability", "skills"]
+}
