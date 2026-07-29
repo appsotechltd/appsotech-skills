@@ -1,0 +1,19 @@
+{
+  "$schema": "https://code.claude.com/schemas/marketplace.json",
+  "name": "appsotech",
+  "description": "Appsotech Limited skills for Claude Code",
+  "owner": {
+    "name": "Appsotech Limited",
+    "email": "appsotechltd@gmail.com",
+    "url": "https://github.com/appsotechltd"
+  },
+  "plugins": [
+    {
+      "name": "app-audit",
+      "source": "./plugins/app-audit",
+      "description": "Run the 13-Layer App Audit against a codebase: weighted score, hard-gate verdict, findings register, remediation plan",
+      "version": "0.1.0",
+      "author": { "name": "Appsotech Limited", "email": "appsotechltd@gmail.com" }
+    }
+  ]
+}

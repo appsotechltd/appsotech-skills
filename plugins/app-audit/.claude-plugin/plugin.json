@@ -1,0 +1,10 @@
+{
+  "name": "app-audit",
+  "description": "Run the 13-Layer App Audit against a codebase: tiered evidence collection, deterministic weighted scoring, hard gates, findings register and sequenced remediation plan",
+  "version": "0.1.0",
+  "author": { "name": "Appsotech Limited", "email": "appsotechltd@gmail.com" },
+  "homepage": "https://github.com/appsotechltd/appsotech-skills",
+  "repository": "https://github.com/appsotechltd/appsotech-skills",
+  "license": "MIT",
+  "keywords": ["audit", "security", "production-readiness", "rls", "reliability", "skills"]
+}
