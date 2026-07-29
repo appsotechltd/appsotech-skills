@@ -76,6 +76,8 @@ Averages hide catastrophes. A stack with an unverified backup can still average 
 - **G7** — No rate limiting on authentication or password-reset endpoints
 - **G8** — A production dependency with a known critical CVE and no compensating control
 
+**G3 fires on found secrets, not on absent scanning.** It is evidence-based: probe 1.4 fires it when a secret is actually inspected in history, build logs, or a built bundle. A missing or absent dependency/secret scanner (probe 7.4) is a detection gap — it makes exposure *undetected*, not demonstrated — so it is scored at 7.4 and does not itself gate.
+
 ## 2.5 Readiness bands
 
 | Band | Score | Interpretation |

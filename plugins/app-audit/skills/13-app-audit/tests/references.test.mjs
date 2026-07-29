@@ -15,7 +15,7 @@ const ROOT_DOC = () => readFileSync(join(ROOT, '13-app-audit', 'app-audit.md'), 
 const FILES = ['rubric-layers-01-04.md', 'rubric-layers-05-09.md', 'rubric-layers-10-13.md'];
 const EXPECTED_COUNTS = { 1: 8, 2: 8, 3: 9, 4: 9, 5: 7, 6: 7, 7: 7, 8: 9, 9: 7, 10: 7, 11: 7, 12: 8, 13: 8 };
 const GATES = {
-  '1.4': 'G3', '3.6': 'G1', '4.3': 'G6', '5.3': 'G4', '7.4': 'G3', '8.1': 'G2',
+  '1.4': 'G3', '3.6': 'G1', '4.3': 'G6', '5.3': 'G4', '8.1': 'G2',
   '8.3': 'G2', '8.4': 'G8', '9.1': 'G7', '12.3': 'G5', '13.2': 'G1',
 };
 

@@ -50,7 +50,7 @@ capped at 2 by the scorer — do not argue with the cap, record the class honest
 | 7.1 | Tests run on every change and **block** merge on failure | Branch protection rules, a blocked PR |
 | 7.2 | Test coverage is meaningful on critical paths, not merely high overall | Coverage report segmented by module |
 | 7.3 | Static analysis and linting enforced in pipeline, not left to local discipline | Pipeline definition, a failed lint gate |
-| 7.4 | Dependency and secret scanning run automatically `[G3]` | Scanner configuration, recent findings and dispositions |
+| 7.4 | Dependency and secret scanning run automatically | Scanner configuration, recent findings and dispositions |
 | 7.5 | Builds are reproducible; the same commit yields the same artefact | Lockfile discipline, pinned base images |
 | 7.6 | Pipeline secrets are scoped, masked in logs, and not available to fork builds | Secret configuration, log inspection |
 | 7.7 | Pipeline duration is short enough that engineers don't route around it | Median pipeline time, bypass frequency |

@@ -82,6 +82,8 @@ Averages hide catastrophes. A stack with an unverified backup can still average 
 - **G7** — No rate limiting on authentication or password-reset endpoints
 - **G8** — A production dependency with a known critical CVE and no compensating control
 
+**G3 fires on found secrets, not on absent scanning.** It is evidence-based: probe 1.4 fires it when a secret is actually inspected in history, build logs, or a built bundle. A missing or absent dependency/secret scanner (probe 7.4) is a detection gap — it makes exposure *undetected*, not demonstrated — so it is scored at 7.4 and does not itself gate.
+
 ### 2.5 Readiness bands
 
 | Band | Score | Interpretation |
@@ -233,7 +235,7 @@ Each probe is scored 0–4. `[G#]` marks a probe that triggers a hard gate at sc
 | 7.1 | Tests run on every change and **block** merge on failure | Branch protection rules, a blocked PR |
 | 7.2 | Test coverage is meaningful on critical paths, not merely high overall | Coverage report segmented by module |
 | 7.3 | Static analysis and linting enforced in pipeline, not left to local discipline | Pipeline definition, a failed lint gate |
-| 7.4 | Dependency and secret scanning run automatically `[G3]` | Scanner configuration, recent findings and dispositions |
+| 7.4 | Dependency and secret scanning run automatically | Scanner configuration, recent findings and dispositions |
 | 7.5 | Builds are reproducible; the same commit yields the same artefact | Lockfile discipline, pinned base images |
 | 7.6 | Pipeline secrets are scoped, masked in logs, and not available to fork builds | Secret configuration, log inspection |
 | 7.7 | Pipeline duration is short enough that engineers don't route around it | Median pipeline time, bypass frequency |
