@@ -417,6 +417,146 @@ function runGoList(dir) {
   return { ok: true, summary: `go module graph inspected via go list — ${count} module(s) found` };
 }
 
+// go list enumerates the module graph but says nothing about known
+// vulnerabilities in it — on a real audit of a Go+React stack this left
+// probe 8.4 with an npm-side severity count and a Go-side module count that
+// looked like coverage but answered a different question entirely, so Go
+// CVE exposure was simply unknown. govulncheck closes that gap.
+const GOVULNCHECK_INSTALL_CMD = 'go install golang.org/x/vuln/cmd/govulncheck@latest';
+
+// Pure parsing/summarising logic, deliberately kept separate from the
+// spawnSync wrapper below so it can be unit-tested against a synthetic
+// newline-delimited JSON fixture that matches govulncheck's documented
+// output schema (see the Message/Finding/Frame types under
+// https://pkg.go.dev/golang.org/x/vuln/internal/govulncheck) without
+// needing the real binary — there is no mocking library under this
+// project's zero-runtime-dependency constraint, and govulncheck is very
+// likely absent on any given contributor's machine (it was absent on the
+// machine this was written on), so the real tool cannot be relied on to
+// exercise the reachable/uncalled distinction end to end.
+//
+// Returns null if stdout contained no parseable JSON line at all (treated
+// by the caller as a failed run, not a clean scan of zero findings).
+export function summarizeGovulncheckOutput(stdout) {
+  const messages = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      messages.push(JSON.parse(trimmed));
+    } catch {
+      // One malformed/truncated line must not abort the parse of every
+      // other line — govulncheck's own contract only promises each *value*
+      // is valid JSON, not that stray blank lines never appear.
+    }
+  }
+  if (messages.length === 0) return null;
+
+  // A single OSV can appear across several finding messages at different
+  // scan levels — module-level, package-level, and (only if the call graph
+  // actually reaches it) one or more symbol-level findings — so results are
+  // grouped by finding.osv and the most specific evidence per group is kept,
+  // rather than reporting the same CVE twice at two different confidence
+  // levels. Message.osv entries (separate from Message.finding entries)
+  // carry the human-readable summary for an OSV ID.
+  const osvSummaries = new Map();
+  const byOsv = new Map();
+
+  for (const msg of messages) {
+    if (msg?.osv?.id) {
+      osvSummaries.set(msg.osv.id, msg.osv.summary || msg.osv.details || msg.osv.id);
+    }
+    if (msg?.finding?.osv) {
+      const id = msg.finding.osv;
+      const entry = byOsv.get(id) ?? { called: false, moduleVersion: null, fixedVersion: null };
+      const trace = Array.isArray(msg.finding.trace) ? msg.finding.trace : [];
+      // govulncheck's own doc comment: "For module level source findings,
+      // the trace will contain a single-frame with no symbol... For package
+      // level source findings, the trace will contain a single-frame with
+      // no symbol[.]" A symbol-level (reachable/called) finding is the only
+      // kind whose trace carries an actual function name, so the presence
+      // of any frame with a `function` field is the signal that the
+      // vulnerable code is actually called, not merely imported.
+      if (trace.some((f) => typeof f?.function === 'string' && f.function.length > 0)) {
+        entry.called = true;
+      }
+      if (!entry.moduleVersion && trace[0]?.module) {
+        entry.moduleVersion = trace[0].version ? `${trace[0].module}@${trace[0].version}` : trace[0].module;
+      }
+      if (!entry.fixedVersion && msg.finding.fixed_version) {
+        entry.fixedVersion = msg.finding.fixed_version;
+      }
+      byOsv.set(id, entry);
+    }
+  }
+
+  const findingLines = [];
+  let calledCount = 0;
+  for (const [id, entry] of byOsv) {
+    if (entry.called) calledCount += 1;
+    const summary = osvSummaries.get(id) ?? id;
+    const where = entry.moduleVersion ? ` (${entry.moduleVersion})` : '';
+    const fix = entry.fixedVersion ? `, fixed in ${entry.fixedVersion}` : ', no fixed version published yet';
+    // "Vulnerable and reachable" (a real call-stack trace exists) and
+    // "vulnerable dependency present but uncalled" are materially different
+    // evidence — the fact text must never blur the two together.
+    findingLines.push(
+      entry.called
+        ? `${id} is vulnerable and reachable (called)${where}: ${summary}${fix}`
+        : `${id}: vulnerable dependency present but not called (uncalled)${where}: ${summary}${fix}`,
+    );
+  }
+
+  const uncalledCount = byOsv.size - calledCount;
+  const summary = byOsv.size === 0
+    ? 'govulncheck found no known vulnerabilities in the module graph'
+    : `govulncheck found ${byOsv.size} known vulnerabilit${byOsv.size === 1 ? 'y' : 'ies'} in the module graph — ${calledCount} reachable (called), ${uncalledCount} imported but not called`;
+
+  return { summary, findingLines };
+}
+
+function runGovulncheck(dir) {
+  // Unlike npm's Windows shim (a .cmd file that CreateProcess cannot launch
+  // directly, per Node's CVE-2024-27980 fix — hence shell: true on the npm
+  // path above), `go install .../govulncheck@latest` builds a real native
+  // executable (govulncheck.exe on Windows), not a script wrapper. Verified
+  // directly against this machine: spawnSync('govulncheck', [...]) against
+  // the absent binary reports a plain res.error.code === 'ENOENT', not the
+  // EINVAL a shim throws — so no shell is needed here, and adding
+  // shell: true would only reintroduce that option's escaping caveats for
+  // no benefit.
+  const res = spawnSync('govulncheck', ['-json', './...'], {
+    cwd: dir,
+    encoding: 'utf8',
+    maxBuffer: AUDIT_MAX_BUFFER,
+    timeout: AUDIT_TIMEOUT_MS,
+  });
+
+  // A spawn failure (tool not on PATH, most commonly — govulncheck is an
+  // opt-in install, not part of the Go toolchain) is categorically
+  // different from a clean scan that found nothing, and must never be
+  // reported in a way that could be read as "no vulnerabilities found".
+  if (res.error) {
+    return {
+      ok: false,
+      reason: `govulncheck could not be invoked (${res.error.code ?? res.error.message}) — install with "${GOVULNCHECK_INSTALL_CMD}" and ensure it is on PATH`,
+    };
+  }
+
+  // govulncheck exits non-zero (status 3) when it finds vulnerabilities —
+  // that is data, not a failed run, exactly like npm audit above — so
+  // stdout is read unconditionally regardless of res.status.
+  if (!res.stdout) {
+    return { ok: false, reason: 'govulncheck produced no output to parse' };
+  }
+
+  const parsed = summarizeGovulncheckOutput(res.stdout);
+  if (!parsed) {
+    return { ok: false, reason: 'govulncheck output could not be parsed as newline-delimited JSON' };
+  }
+  return { ok: true, ...parsed };
+}
+
 export function dependencyFacts(dir, roots) {
   const target = resolve(dir);
   const projectRoots = roots ?? discoverRoots(target);
@@ -489,6 +629,24 @@ export function dependencyFacts(dir, roots) {
       } else {
         pendingAuditFailures.push({
           reason: `go list in ${relRoot}: ${goResult.reason}`,
+          source: goModSource,
+        });
+      }
+
+      // go list above only enumerates the module graph; govulncheck is what
+      // actually answers the 8.4 vulnerability question for Go, mirroring
+      // npm audit's role on the npm side. Run independently of go list's
+      // outcome — a go.mod-bearing root deserves an attempted vuln scan
+      // even if, say, go list's own output happened to be unparsable.
+      const vulnResult = runGovulncheck(root);
+      if (vulnResult.ok) {
+        facts.push(makeFact('8.4', vulnResult.summary, goModSource));
+        for (const line of vulnResult.findingLines) {
+          facts.push(makeFact('8.4', line, goModSource));
+        }
+      } else {
+        pendingAuditFailures.push({
+          reason: `govulncheck in ${relRoot}: ${vulnResult.reason}`,
           source: goModSource,
         });
       }

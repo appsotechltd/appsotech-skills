@@ -13,6 +13,7 @@ import {
   dependencyFacts,
   bundleFacts,
   collectStatic,
+  summarizeGovulncheckOutput,
 } from '../scripts/lib/repo.mjs';
 
 const TARGET = join(import.meta.dirname, 'fixtures', 'target');
@@ -31,6 +32,12 @@ const MONOREPO = join(FIXTURES_EXTRA, 'monorepo');
 const GOONLY = join(FIXTURES_EXTRA, 'goonly');
 const NO_FROM_DOCKERFILE = join(FIXTURES_EXTRA, 'nofromdockerfile');
 const PARTIAL_NPM = join(FIXTURES_EXTRA, 'partial-npm');
+// go.mod content here fails to parse ("unknown directive"), so go list
+// itself produces no output — the only fixture in this suite where a Go
+// root has zero 8.4 evidence from any source, which is what's needed to
+// prove govulncheck's absence lands the probe in unavailable[] rather than
+// being reconciled into a fact (see the govulncheck tests below).
+const BROKEN_GOMOD = join(FIXTURES_EXTRA, 'broken-gomod');
 
 // dependencyFacts on these three fixtures shells out to real npm/go
 // processes (deliberately, to prove Critical 2's fix and the 8.4
@@ -46,6 +53,7 @@ const PARTIAL_NPM = join(FIXTURES_EXTRA, 'partial-npm');
 const monorepoDeps = dependencyFacts(MONOREPO);
 const goonlyDeps = dependencyFacts(GOONLY);
 const partialNpmDeps = dependencyFacts(PARTIAL_NPM);
+const brokenGomodDeps = dependencyFacts(BROKEN_GOMOD);
 
 test('migration facts flag the up without a matching down', () => {
   const { facts } = migrationFacts(TARGET);
@@ -157,6 +165,126 @@ test('go list runs and reports a real result for the go root', () => {
   assert.match(goListFact.fact, /module/i);
 });
 
+// --- govulncheck: Go vulnerability evidence for probe 8.4 -------------------
+//
+// govulncheck is not installed on the machine this suite was written on
+// (confirmed: spawnSync('govulncheck', ...) reports res.error.code ===
+// 'ENOENT'), which is also expected to be the common case for contributors
+// running this suite — govulncheck is an opt-in `go install`, not part of
+// the Go toolchain. That makes the absent-tool path the one real,
+// end-to-end scenario this suite can exercise without a mock; the
+// reachable/uncalled parsing logic is covered separately below via
+// summarizeGovulncheckOutput, against synthetic NDJSON matching
+// govulncheck's documented schema.
+
+test('govulncheck absence on a root where go list already succeeded reconciles into a fact, never unavailable (existing 8.4 contract)', () => {
+  const { facts, unavailable } = goonlyDeps;
+  const govulnFact = facts.find((f) => f.probe === '8.4' && /govulncheck/i.test(f.fact));
+  assert.ok(
+    govulnFact,
+    `expected govulncheck's spawn failure to be reconciled into an 8.4 fact; facts=${JSON.stringify(facts)}`,
+  );
+  assert.match(govulnFact.fact, /could not be inspected/i);
+  assert.match(govulnFact.fact, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@latest/);
+  assert.doesNotMatch(
+    govulnFact.fact,
+    /found no known vulnerabilit/i,
+    'a spawn failure must never read like a clean scan',
+  );
+  assert.ok(
+    !unavailable.some((u) => u.probe === '8.4'),
+    'probe 8.4 already has real evidence (go list) and must not also appear in unavailable',
+  );
+});
+
+test('govulncheck absence lands 8.4 in unavailable, naming the tool and the install command, when no other 8.4 evidence exists for the root', () => {
+  const { facts, unavailable } = brokenGomodDeps;
+  assert.ok(
+    !facts.some((f) => f.probe === '8.4'),
+    'go list also failed on this fixture, so 8.4 must have no fact at all',
+  );
+  const gap = unavailable.find((u) => u.probe === '8.4' && /govulncheck/i.test(u.reason));
+  assert.ok(gap, `expected an 8.4 unavailable entry naming govulncheck; got ${JSON.stringify(unavailable)}`);
+  assert.match(gap.reason, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@latest/);
+  assert.doesNotMatch(gap.reason, /found no known vulnerabilit/i, 'a spawn failure must never read like a clean scan');
+});
+
+test('summarizeGovulncheckOutput distinguishes a reachable (called) finding from an uncalled one', () => {
+  const ndjson = [
+    JSON.stringify({ config: { protocol_version: 'v1.0.0', scanner_name: 'govulncheck', scan_level: 'symbol' } }),
+    JSON.stringify({ osv: { id: 'GO-2021-0113', summary: 'Denial of service via crafted Content-Type header' } }),
+    JSON.stringify({ osv: { id: 'GO-2022-9999', summary: 'Path traversal in example/vulnerable-dep' } }),
+    // Called: trace has function-bearing frames tracing from the vulnerable
+    // symbol back to an entry point.
+    JSON.stringify({
+      finding: {
+        osv: 'GO-2021-0113',
+        fixed_version: 'v0.1.0',
+        trace: [
+          { module: 'golang.org/x/net', version: 'v0.0.0-20210917221730', package: 'golang.org/x/net/http2', function: 'ConfigureServer' },
+          { module: 'example.com/goonly', package: 'example.com/goonly', function: 'main' },
+        ],
+      },
+    }),
+    // Uncalled: a single frame with no `function` field (package-level
+    // finding — imported, never reached).
+    JSON.stringify({
+      finding: {
+        osv: 'GO-2022-9999',
+        trace: [{ module: 'example.com/vulnerable-dep', version: 'v1.2.3', package: 'example.com/vulnerable-dep/sub' }],
+      },
+    }),
+  ].join('\n');
+
+  const result = summarizeGovulncheckOutput(ndjson);
+  assert.equal(result.findingLines.length, 2);
+
+  const called = result.findingLines.find((l) => l.startsWith('GO-2021-0113'));
+  assert.match(called, /reachable \(called\)/);
+  assert.match(called, /fixed in v0\.1\.0/);
+
+  const uncalled = result.findingLines.find((l) => l.startsWith('GO-2022-9999'));
+  assert.match(uncalled, /not called \(uncalled\)/);
+  assert.match(uncalled, /no fixed version published yet/);
+
+  assert.match(result.summary, /2 known vulnerabilities/);
+  assert.match(result.summary, /1 reachable \(called\), 1 imported but not called/);
+});
+
+test('summarizeGovulncheckOutput groups multiple findings for the same OSV and keeps the reachable verdict if any of them is called', () => {
+  const ndjson = [
+    JSON.stringify({ osv: { id: 'GO-2023-0001', summary: 'Example vuln' } }),
+    // Module-level finding first (no function on its frame) ...
+    JSON.stringify({ finding: { osv: 'GO-2023-0001', trace: [{ module: 'example.com/dep' }] } }),
+    // ... then a symbol-level finding proving it is in fact called.
+    JSON.stringify({
+      finding: {
+        osv: 'GO-2023-0001',
+        trace: [
+          { module: 'example.com/dep', package: 'example.com/dep/pkg', function: 'Vulnerable' },
+          { module: 'example.com/app', package: 'example.com/app', function: 'main' },
+        ],
+      },
+    }),
+  ].join('\n');
+
+  const result = summarizeGovulncheckOutput(ndjson);
+  assert.equal(result.findingLines.length, 1);
+  assert.match(result.findingLines[0], /reachable \(called\)/);
+});
+
+test('summarizeGovulncheckOutput reports a positive clean-scan summary when no findings are present', () => {
+  const ndjson = JSON.stringify({ config: { protocol_version: 'v1.0.0', scan_level: 'symbol' } });
+  const result = summarizeGovulncheckOutput(ndjson);
+  assert.equal(result.findingLines.length, 0);
+  assert.match(result.summary, /found no known vulnerabilities/i);
+});
+
+test('summarizeGovulncheckOutput returns null when stdout has no parseable JSON at all', () => {
+  assert.equal(summarizeGovulncheckOutput(''), null);
+  assert.equal(summarizeGovulncheckOutput('not json\nalso not json'), null);
+});
+
 // --- Critical 3: per-probe coverage must be explicit, not array-emptiness --
 
 test('dependencyFacts still reports 1.7 on a Go-only target with no package.json anywhere', () => {
@@ -209,7 +337,7 @@ test('a partial npm audit failure across roots reconciles to one outcome per pro
 });
 
 test('no probe appears in both facts and unavailable for any collector', () => {
-  const results = [partialNpmDeps, monorepoDeps, goonlyDeps, collectStatic(TARGET)];
+  const results = [partialNpmDeps, monorepoDeps, goonlyDeps, brokenGomodDeps, collectStatic(TARGET)];
   for (const { facts, unavailable } of results) {
     const factProbes = new Set(facts.map((f) => f.probe));
     for (const { probe } of unavailable) {
