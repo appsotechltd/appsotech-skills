@@ -18,8 +18,20 @@ test('marketplace.json declares the audit plugin at its real path', () => {
 test('plugin.json is valid and versioned', () => {
   const p = read('plugins/audit/.claude-plugin/plugin.json');
   assert.equal(p.name, 'audit');
-  assert.equal(p.version, '0.2.0');
+  // Semver shape, not a pinned literal. Asserting the exact version meant
+  // every release edited a test to say the release happened, which tests
+  // nothing — the invariant worth holding is the one below.
+  assert.match(p.version, /^\d+\.\d+\.\d+$/, 'version must be semver');
   assert.equal(p.license, 'MIT');
   assert.equal(p.author.name, 'Appsotech Limited');
   assert.ok(p.description.length > 20, 'description must be substantive');
+});
+
+test('plugin.json and the marketplace entry declare the same version', () => {
+  // These two are edited by hand in separate files and drift silently: the
+  // marketplace is what a user installs from, plugin.json is what they get.
+  const p = read('plugins/audit/.claude-plugin/plugin.json');
+  const m = read('.claude-plugin/marketplace.json');
+  const entry = m.plugins.find((x) => x.name === 'audit');
+  assert.equal(entry.version, p.version, 'marketplace and plugin.json versions must match');
 });

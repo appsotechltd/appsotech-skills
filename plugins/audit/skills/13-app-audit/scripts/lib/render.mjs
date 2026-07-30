@@ -59,6 +59,13 @@ function renderCover(card) {
         coverage.incompleteLayers.map((l) => `${l.layer} (${l.got}/${l.expected})`).join(', '),
       );
     }
+    // Printed whether or not a reason was given. An interim scorecard with no
+    // stated reason is itself worth seeing on the cover.
+    lines.push(
+      `- Reported as interim because: ${
+        coverage.partialReason ?? '**no reason recorded**'
+      }`,
+    );
     lines.push('');
   }
 

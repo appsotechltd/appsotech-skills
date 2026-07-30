@@ -265,10 +265,26 @@ a half-finished file the normal state on disk. The scorer refuses rather than
 reporting it as a verdict, and the cover says `PARTIAL AUDIT` with the
 coverage counts.
 
-If you genuinely want an interim scorecard mid-audit, pass `--partial`. It
-still writes the files and still reports no band — the flag acknowledges the
-gap, it does not fill it. Do not reach for it to make a red exit go away at the
-end of a run; finish the layer groups.
+If you genuinely want an interim scorecard mid-audit, pass `--partial` **with a
+reason**:
+
+```
+node "$SCRIPTS"/score.mjs … --partial "interim: layers 5-13 scheduled for Friday"
+```
+
+The reason is recorded in `scorecard.json` and printed on the cover, for the
+same reason `N/A` requires an `naJustification` — otherwise the flag is just a
+switch that makes a red exit go away, and "interim, the rest lands Friday" is
+indistinguishable from "I stopped early" at exactly the moment someone hands
+the file on. `--partial` with no reason exits 2.
+
+It still reports no band. The flag acknowledges the gap; it does not fill it.
+
+**A partial audit's `EXECUTIVE-SUMMARY.md` opens by saying so** — first line,
+before the gates or the findings: which layers were not examined, and that the
+figure is not comparable to a complete audit. A sponsor reading a one-page
+summary has no way to discover it otherwise, and that page is the one that
+travels.
 
 `scores.json` must carry the five Phase 1 `scope` keys. The scorer exits 2
 without them: a scorecard with no `ref` can never be re-audited against, which

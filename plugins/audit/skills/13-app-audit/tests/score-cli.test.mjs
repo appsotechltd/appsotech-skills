@@ -31,7 +31,7 @@ const DOC = {
 // Two probes is a deliberately partial document, so these runs pass --partial.
 // The subject of these tests is weights threading, not completeness — the
 // coverage guard has its own tests below.
-function runScoreCli(scoresDoc, extraArgs = ['--partial']) {
+function runScoreCli(scoresDoc, extraArgs = ['--partial', 'interim: weights fixture']) {
   return withTempDir((dir) => {
     const scoresPath = join(dir, 'scores.json');
     writeFileSync(scoresPath, JSON.stringify(scoresDoc));
@@ -89,7 +89,7 @@ test('CLI: --out immediately followed by another flag falls back to the default 
     const scoresPath = join(dir, 'scores.json');
     writeFileSync(scoresPath, JSON.stringify(DOC));
     const result = spawnSync(
-      process.execPath, [CLI_PATH, scoresPath, '--out', '--baseline', '--partial'],
+      process.execPath, [CLI_PATH, scoresPath, '--out', '--baseline', '--partial', 'interim: flag-guard fixture'],
       { encoding: 'utf8', cwd: dir },
     );
     assert.equal(result.status, 0, `expected a clean run, got stderr: ${result.stderr}`);
@@ -135,7 +135,7 @@ test('CLI: the scorecard says it is partial on the cover, not only in the log', 
   withTempDir((dir) => {
     const scoresPath = join(dir, 'scores.json');
     writeFileSync(scoresPath, JSON.stringify({ scope: SCOPE, probes: { '1.1': { score: 4, class: 'inspected' } } }));
-    spawnSync(process.execPath, [CLI_PATH, scoresPath, '--out', dir, '--partial'], { encoding: 'utf8' });
+    spawnSync(process.execPath, [CLI_PATH, scoresPath, '--out', dir, '--partial', 'interim: layers 5-13 on Friday'], { encoding: 'utf8' });
     const md = readFileSync(join(dir, 'SCORECARD.md'), 'utf8');
     const cover = md.split('## ')[0];
     // The cover is the only section a reader may see, and it is what reaches a
@@ -149,7 +149,7 @@ test('CLI: the scorecard says it is partial on the cover, not only in the log', 
 
 test('CLI: --partial still writes the scorecard and exits 0', () => {
   const { result, card } = runScoreCli(
-    { scope: SCOPE, probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial']);
+    { scope: SCOPE, probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial', 'interim: agreed with client']);
   assert.equal(result.status, 0, 'an acknowledged interim scorecard is allowed');
   assert.ok(card, 'scorecard.json is still written');
   assert.equal(card.band, null, '--partial acknowledges the gap, it does not fill it');
@@ -171,7 +171,7 @@ test('CLI: a scores.json with no scope is refused', () => {
   // Phase 1 calls the reference point non-negotiable, but nothing enforced it:
   // the cover rendered "(unspecified)" five times and scored anyway. A
   // scorecard with no ref can never be re-audited against.
-  const { result } = runScoreCli({ probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial']);
+  const { result } = runScoreCli({ probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial', 'interim']);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /missing required scope field\(s\): system, ref, environment, date, auditor/);
 });
@@ -179,7 +179,7 @@ test('CLI: a scores.json with no scope is refused', () => {
 test('CLI: a partially filled scope names only the fields actually missing', () => {
   const { result } = runScoreCli(
     { scope: { system: 'acme', environment: 'production', date: '2026-07-29', auditor: 'Jane' },
-      probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial']);
+      probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial', 'interim']);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /missing required scope field\(s\): ref$/m);
 });
@@ -187,7 +187,54 @@ test('CLI: a partially filled scope names only the fields actually missing', () 
 test('CLI: an empty-string scope field counts as missing', () => {
   // "" renders as blank on the cover exactly like an absent key, so it has to
   // fail the same way.
-  const { result } = runScoreCli({ scope: { ...SCOPE, ref: '' }, probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial']);
+  const { result } = runScoreCli({ scope: { ...SCOPE, ref: '' }, probes: { '1.1': { score: 4, class: 'inspected' } } }, ['--partial', 'interim']);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /ref/);
+});
+
+// --- --partial takes a reason, exactly as N/A takes an naJustification ---
+//
+// Without one it is a switch that makes a red exit go away, and "interim,
+// layers 5-13 land Friday" becomes indistinguishable from "I stopped early" at
+// the moment someone hands the file on. The reason is recorded in
+// scorecard.json and printed on the cover so it outlives the terminal session.
+
+const PARTIAL_DOC = { scope: SCOPE, probes: { '1.1': { score: 4, class: 'inspected' } } };
+
+test('CLI: --partial with no reason is refused', () => {
+  const { result } = runScoreCli(PARTIAL_DOC, ['--partial']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--partial requires a reason/);
+});
+
+test('CLI: --partial followed by another flag is not read as its reason', () => {
+  // `--partial --json` means "no reason given", not "the reason is --json".
+  const { result } = runScoreCli(PARTIAL_DOC, ['--partial', '--baseline']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /--partial requires a reason/);
+});
+
+test('CLI: the reason is recorded in scorecard.json and shown on the cover', () => {
+  withTempDir((dir) => {
+    const scoresPath = join(dir, 'scores.json');
+    writeFileSync(scoresPath, JSON.stringify(PARTIAL_DOC));
+    const result = spawnSync(
+      process.execPath,
+      [CLI_PATH, scoresPath, '--out', dir, '--partial', 'interim: layers 5-13 scheduled for Friday'],
+      { encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const card = JSON.parse(readFileSync(join(dir, 'scorecard.json'), 'utf8'));
+    assert.equal(card.coverage.partialReason, 'interim: layers 5-13 scheduled for Friday');
+    const cover = readFileSync(join(dir, 'SCORECARD.md'), 'utf8').split('## ')[0];
+    assert.match(cover, /Reported as interim because: interim: layers 5-13 scheduled for Friday/);
+  });
+});
+
+test('CLI: a complete audit needs no reason and records none', () => {
+  const { result, card } = runScoreCli(fullDoc(), []);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(card.coverage.partialReason, null);
+  // The interim block must not appear at all on a complete audit.
+  assert.equal(card.coverage.complete, true);
 });

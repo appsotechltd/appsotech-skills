@@ -6,13 +6,29 @@ import { renderScorecard, renderBaselineDiff } from './lib/render.mjs';
 import { flagValue, positionals } from './lib/cli-args.mjs';
 
 const args = process.argv.slice(2);
-const VALUE_FLAGS = new Set(['--baseline', '--out']);
+const VALUE_FLAGS = new Set(['--baseline', '--out', '--partial']);
 
 const input = positionals(args, VALUE_FLAGS)[0] ?? null;
 const allowPartial = args.includes('--partial');
+const partialReason = flagValue(args, '--partial');
 
 if (!input) {
-  console.error('usage: score.mjs <scores.json> [--baseline <scorecard.json>] [--out <dir>] [--partial]');
+  console.error('usage: score.mjs <scores.json> [--baseline <scorecard.json>] [--out <dir>]');
+  console.error('       [--partial "<why this is an interim scorecard>"]');
+  process.exit(2);
+}
+
+// --partial takes a reason, for the same reason N/A takes a naJustification:
+// otherwise it is a switch that makes a red exit go away, and the difference
+// between "interim scorecard, layers 5-13 land Friday" and "I stopped early"
+// disappears at exactly the moment someone hands the file on.
+if (allowPartial && !partialReason) {
+  console.error(
+    '--partial requires a reason, e.g.\n' +
+    '  --partial "interim: layers 5-13 scheduled for Friday"\n' +
+    'It is recorded in scorecard.json and printed on the cover. If the audit is ' +
+    'simply unfinished, finish it rather than labelling it.',
+  );
   process.exit(2);
 }
 
@@ -41,7 +57,7 @@ if (missingScope.length > 0) {
 // accepts this via opts.weights and falls back to the default WEIGHTS table
 // whenever it's absent; this was previously unreachable because nothing
 // called scoreAudit with a second argument at all.
-const card = scoreAudit(doc, { weights: doc.weights });
+const card = scoreAudit(doc, { weights: doc.weights, partialReason });
 let md = renderScorecard(card);
 
 const baselinePath = flagValue(args, '--baseline');

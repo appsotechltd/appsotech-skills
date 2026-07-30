@@ -145,6 +145,7 @@ export function band(overall) {
 
 export function scoreAudit(doc, opts = {}) {
   const weights = opts.weights ?? WEIGHTS;
+  const partialReason = opts.partialReason ?? null;
   const probes = {};
   const grouped = {};
 
@@ -179,7 +180,11 @@ export function scoreAudit(doc, opts = {}) {
   const weighted = weightedOverall(layerScores, weights);
   const overall = gates.length > 0 ? Math.min(weighted ?? 0, GATE_CAP) : weighted;
 
-  const coverage = coverageOf(doc.probes);
+  // The reason rides on coverage so it lands in scorecard.json beside the
+  // shortfall it explains — an interim scorecard that outlives the terminal
+  // session still says why it was allowed. Same rule as naJustification: an
+  // exception is a decision someone can review, not a flag that silences one.
+  const coverage = { ...coverageOf(doc.probes), partialReason };
 
   return {
     scope: doc.scope ?? null,

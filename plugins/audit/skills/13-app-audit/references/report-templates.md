@@ -91,6 +91,19 @@ engineering work. Write for that reader:
   summarise them by consequence ("customer data is exposed in three
   separate ways") rather than listing all twelve.
 
+**If the scorecard says PARTIAL AUDIT, this page opens by saying so** — a
+first line before the gates and before the findings, naming which layers were
+not examined and stating that the figure is not comparable to a complete
+audit. Everywhere else the reader can see the shortfall: the scorecard cover
+carries it, `scorecard.json` records it, the terminal printed it. This page is
+the one that travels on its own, to the reader least able to discover the gap
+for themselves, and a clean-looking summary drawn from a partial scorecard is
+the most misleading artefact this skill can produce.
+
+> **This audit is incomplete.** We examined [n] of the 13 layers; [list what
+> was not covered] were not assessed. The score below reflects only what was
+> examined and should not be read as an overall verdict on the system.
+
 Fill in every bracket below with real content — this is a structure to
 write into, not a heading skeleton to leave blank.
 
