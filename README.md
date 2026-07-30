@@ -113,7 +113,7 @@ doing on-demand TLS would have to own `:443`, which Traefik already does.
 
 ### `appsotech-audit`
 
-Runs the [13-Layer App Audit](13-app-audit/app-audit.md) against a codebase.
+Runs the [13-Layer App Audit](appsotech-audit/app-audit.md) against a codebase.
 101 probes across 13 layers, scored 0–4 from collected evidence, weighted to a
 single figure, with eight hard gates that cap the score at 49 when triggered.
 

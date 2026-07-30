@@ -10,7 +10,7 @@ const REF = (f) => readFileSync(join(SKILL, 'references', f), 'utf8');
 // -> audit -> plugins -> repo root), same derivation manifests.test.mjs
 // already uses, to reach the standalone root-level methodology document.
 const ROOT = join(import.meta.dirname, '..', '..', '..', '..', '..');
-const ROOT_DOC = () => readFileSync(join(ROOT, '13-app-audit', 'app-audit.md'), 'utf8');
+const ROOT_DOC = () => readFileSync(join(ROOT, 'appsotech-audit', 'app-audit.md'), 'utf8');
 
 const FILES = ['rubric-layers-01-04.md', 'rubric-layers-05-09.md', 'rubric-layers-10-13.md'];
 const EXPECTED_COUNTS = { 1: 8, 2: 8, 3: 9, 4: 9, 5: 7, 6: 7, 7: 7, 8: 9, 9: 7, 10: 7, 11: 7, 12: 8, 13: 8 };
@@ -169,7 +169,7 @@ test('report-templates.md includes the layer ownership map with all eight arbitr
 
 // --- root app-audit.md must stay bound to references/rubric-layers-*.md ----
 //
-// 13-app-audit/app-audit.md (the standalone, browsable methodology document
+// appsotech-audit/app-audit.md (the standalone, browsable methodology document
 // at the repo root) and references/rubric-layers-*.md (what the skill
 // actually loads at runtime) carry 100% duplicated probe-table content by
 // design — one document for a human reading the methodology on its own, one
