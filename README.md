@@ -6,16 +6,46 @@ Skills for Claude Code, published by Appsotech Limited.
 
     /plugin marketplace add appsotechltd/appsotech-skills
     /plugin install audit@appsotech
+    /plugin install build@appsotech
 
 ## Install by copying
 
     cp -r plugins/audit/skills/13-app-audit ~/.claude/skills/
+    cp -r plugins/build/skills/appsotech-stack ~/.claude/skills/
 
 On Windows (PowerShell):
 
     Copy-Item -Recurse plugins\audit\skills\13-app-audit $HOME\.claude\skills\
+    Copy-Item -Recurse plugins\build\skills\appsotech-stack $HOME\.claude\skills\
 
 ## Skills
+
+### `appsotech-stack`
+
+Builds an application on the Appsotech house stack. The stack, the directory
+layout, the port allocation and the deployment are already decided — a run
+never asks what to build things with. It asks two things: which surfaces to
+build (a checklist), and what the product does.
+
+Surfaces are the fixed set every product is assembled from:
+
+| Surface | What it is |
+|---|---|
+| `platform-web` | Next.js — product marketing |
+| `tenant-web` | Next.js — a tenant's own public site |
+| `webapp` | React + Vite — the application, behind auth at `/app` |
+| `admin-web` | React + Vite — operator console across all tenants |
+| `mobile` | Flutter — learner mobile app |
+| `backend` | Go — the product API, same-origin at `/v1` |
+| `gateway` | Caddy — the single ingress owning every hostname |
+
+`scripts/scaffold.mjs` allocates the product's block of ten development ports
+and its own PostgreSQL database, then writes everything the conventions decide
+by themselves — manifests, TypeScript configs, Dockerfiles, the RFC 7807 error
+envelope, CORS and tenant middleware, health and readiness routes, and the
+Coolify compose stack. It never overwrites an existing file, so a second run
+over a product is safe. Domain code is not scaffolded: that is the feature
+phase, built one vertical slice at a time.
 
 ### `13-app-audit`
 
@@ -42,10 +72,10 @@ folders under its own `skills/`:
     plugins/<theme>/.claude-plugin/plugin.json
     plugins/<theme>/skills/<skill-name>/SKILL.md
 
-`plugins/audit/` is the current example: the plugin is the theme, and
-`skills/13-app-audit/` is one skill within it. A second audit-flavoured skill
-(a security review, a dependency audit) would sit alongside it as
-`plugins/audit/skills/<new-skill>/`, sharing the same plugin/version.
+There are two themes today: `plugins/audit/` holds `13-app-audit`, and
+`plugins/build/` holds `appsotech-stack`. A second skill in either theme sits
+alongside the first as `plugins/<theme>/skills/<new-skill>/`, sharing that
+plugin's version.
 
 ### Adding a skill
 
@@ -58,7 +88,10 @@ folders under its own `skills/`:
 ## Contributing
 
 Issues and pull requests welcome. Skills live under `plugins/<plugin>/skills/`.
-Run tests with `node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs`.
+Run tests with:
+
+    node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs
+    node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
 
 Requires **Node 22 or later** — the code uses `import.meta.dirname` and the
 tests rely on `node --test`'s glob-argument support, neither of which exist

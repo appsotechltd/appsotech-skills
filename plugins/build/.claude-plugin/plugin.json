@@ -1,0 +1,10 @@
+{
+  "name": "build",
+  "description": "Build skills for the Appsotech house stack: Go APIs, Next.js and React/Vite surfaces, Flutter mobile, PostgreSQL with RLS, Caddy gateway and Coolify deployment — scaffolded to a fixed layout with allocated ports and databases",
+  "version": "0.1.0",
+  "author": { "name": "Appsotech Limited", "email": "appsotechltd@gmail.com" },
+  "homepage": "https://github.com/appsotechltd/appsotech-skills",
+  "repository": "https://github.com/appsotechltd/appsotech-skills",
+  "license": "MIT",
+  "keywords": ["scaffold", "go", "nextjs", "react", "vite", "flutter", "postgres", "coolify", "skills"]
+}
