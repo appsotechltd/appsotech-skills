@@ -236,10 +236,32 @@ Do not report a surface as built on the strength of having written it.
 | Vite | `npm run build && npm run type-check && npm run test` |
 | Flutter | `flutter analyze && flutter test` |
 | Compose | `docker compose -f deploy/<slug>.compose.yml config` |
+| Design tokens | `node "$CONTRAST" design/tokens.css` |
+| UI source | `node "$AUDIT" apps/<surface>/src` |
+| Rendered UI (Vite) | `node "$RESPONSIVE" --serve apps/<surface>/dist` |
+| Rendered UI (Next.js) | `npm run start` in the surface, then `node "$RESPONSIVE" http://localhost:<port>` |
 
 Run every one that applies. Report what passed, what failed with its output,
 and anything left unbuilt. A phase that was skipped is said plainly, not
 omitted.
+
+**Any surface under `apps/` is a UI surface, so the design rows apply to it.**
+If `design/tokens.css` does not exist, the **`design-pipeline`** skill never
+ran — run it before reporting the surface built. A surface that compiles is not
+a surface that is finished, and a screen written before the tokens were frozen
+is a screen with colours that will not follow the design system.
+
+A Vite surface builds to a static `dist/`, which `--serve` can host directly. A
+Next.js surface builds to `.next/` and needs its own server, so start it and
+pass the URL — pointing `--serve` at `.next/` finds no `index.html` and is
+refused rather than reporting an empty page as clean. `apps/mobile` is checked
+by hand: `flutter analyze` covers the code, and layout at the largest OS text
+scale and in landscape is a human pass.
+
+`$CONTRAST`, `$AUDIT` and `$RESPONSIVE` are resolved by `design-pipeline`'s own
+**Paths** section — read it rather than guessing at the paths, and do not copy
+its resolution loop here. Two copies of a path lookup drift, and an unanchored
+one silently makes the gate unrunnable.
 
 Finally, update the allocation table — `docs/ports-and-databases.md` — with the
 new product's block, API port and database. A product missing from that table

@@ -223,7 +223,19 @@ test('--serve pointed at a source directory is refused', () => {
   const r = run(['--serve', dir, '--no-shots']);
   assert.equal(r.status, 2);
   assert.match(r.stderr, /no index\.html/);
-  assert.match(r.stderr, /BUILD output/);
+  assert.match(r.stderr, /static build/);
+});
+
+test('--serve pointed at .next says what to do instead', () => {
+  // .next IS build output, so the generic "point at the build output" message
+  // reads as advice already taken. It is a server's working directory rather
+  // than a servable tree, and the fix is a different command entirely.
+  const dir = mkdtempSync(join(tmpdir(), 'nextish-'));
+  mkdirSync(join(dir, '.next'), { recursive: true });
+  const r = run(['--serve', join(dir, '.next'), '--no-shots']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /not statically servable/);
+  assert.match(r.stderr, /npm run start/);
 });
 
 test('--serve on a missing directory is refused', () => {

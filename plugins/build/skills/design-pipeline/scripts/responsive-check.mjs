@@ -358,11 +358,21 @@ if (isMain) {
       process.exit(2);
     }
     if (!existsSync(join(serveRoot, 'index.html'))) {
-      // Pointing at src/ instead of dist/ otherwise reports a blank page as
-      // clean, which is the most convincing possible false pass.
+      // Without this, pointing at src/ or .next/ renders nothing and reports
+      // zero findings — the most convincing possible false pass.
+      //
+      // .next gets its own sentence because it IS build output, so "point at
+      // the build output" would read as already-done advice. It is a server's
+      // working directory, not a servable tree.
+      const isNext = serveRoot.replace(/\/+$/, '').endsWith('.next');
       console.error(
-        `--serve: no index.html in ${serveRoot} — point this at the BUILD output ` +
-          '(dist/, out/) rather than the source directory.');
+        isNext
+          ? '--serve: a Next.js build is not statically servable. Run `npm run start` ' +
+            'in that surface and pass the URL instead:\n' +
+            '  node responsive-check.mjs http://localhost:<port>'
+          : `--serve: no index.html in ${serveRoot} — point this at a static build ` +
+            'directory (Vite `dist/`, a Next.js `out/` export), not the source tree.',
+      );
       process.exit(2);
     }
     server = await serveDir(serveRoot);
