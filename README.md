@@ -26,10 +26,11 @@ single figure, with eight hard gates that cap the score at 49 when triggered.
 Produces `audit/<date>/` containing a scorecard, a findings register with
 reproducible evidence references, and a sequenced remediation plan.
 
-Evidence is collected in three tiers: the repository always, a live URL when
-supplied, and Supabase / Vercel / Cloudflare MCP connectors when authorised.
-Probes that cannot be evidenced are capped at 2 and marked UNVERIFIED rather
-than guessed.
+Evidence is collected in up to four tiers: the repository always; a live URL
+when supplied; a direct, read-only Postgres connection when one is available;
+and whatever MCP connectors happen to be authorised — Supabase, Vercel and
+Cloudflare are common examples, not the definition. Probes that cannot be
+evidenced are capped at 2 and marked UNVERIFIED rather than guessed.
 
 ## Repository layout
 

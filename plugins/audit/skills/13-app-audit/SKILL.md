@@ -95,19 +95,55 @@ safety guard, not a bug: a 20-request burst at a stranger's `/login` is
 DoS-adjacent. If the auditor doesn't own the target host, leave the flag off
 and accept that 9.1 will be `unavailable`.
 
-If Supabase / Vercel / Cloudflare MCP connectors are authorised this session,
-use them directly (table/RLS inspection, advisors, deployments, logs) and
-write what you find as an evidence-shaped document — `{ tier, collectedAt,
-facts, unavailable }`, with a `class` on every fact — to
+Tier 3 is direct inspection of whatever the target actually runs on — not a
+fixed vendor list. It has two forms:
+
+**Direct database inspection**, whenever a Postgres connection is available
+(a `PGURL`, or the standard `PGHOST`/`PGDATABASE`/`PGUSER` variables `psql`
+already reads — see the collector's own usage text for the full precedence
+order). Requires `psql` 12 or later (for `--csv` output) on PATH. Prefer a
+read-only database role for the connection; every query the collector runs
+is also wrapped in its own read-only transaction with a statement timeout
+and `-X`/`--no-psqlrc` (so a start-up file on the connecting account cannot
+alter output or print anything), but a least-privilege role is still the
+right input, not a substitute for one:
+
+```
+node scripts/collect-db.mjs [--dsn <connstring>] --out <targetDir>/audit/<date>/evidence/db.json
+```
+
+This evidences 8.1 from `pg_class`/`pg_policies` as it actually stands on the
+running database — not as migration files intend it to be — plus 3.2 (index
+usage), 3.4 (constraint coverage) and 3.8 (connection headroom). A `--dsn`
+value lands in your shell history (and is visible to other users on the same
+machine via the process list); the environment does neither, so prefer it.
+
+**`db.json`'s 8.2 rows are a policy inventory (cmd, roles, and whether USING
+/ WITH CHECK meaningfully constrain each policy) — context to help judge 8.1,
+not the "policy test suite, a demonstrated denial" the 8.2 rubric row itself
+asks for.** No collector attempts an authenticated read/write as a specific
+role and observes an actual denial; that's still Phase 4 interview or a real
+test suite. Score 8.2 from `db.json` no higher than `inspected` class allows
+for a config-inspection claim, and don't let it stand in for a demonstrated
+negative-case test.
+
+**Whatever MCP connectors happen to be authorised this session** — Supabase,
+Vercel and Cloudflare are common examples, not the definition of this tier,
+and the auditor may have none of them or a different one entirely. If one is
+authorised, use it directly (table/RLS inspection, advisors, deployments,
+logs) and write what you find as an evidence-shaped document — `{ tier,
+collectedAt, facts, unavailable }`, with a `class` on every fact — to
 `<targetDir>/audit/<date>/evidence/mcp-<provider>.json`. There is no CLI for
-this tier; it's you, reading tool output and recording facts, never scores.
+this half of the tier; it's you, reading tool output and recording facts,
+never scores.
 
 Record what ran in `<targetDir>/audit/<date>/evidence/tiers.json`:
 
 ```json
 {
   "static": { "available": true },
-  "live":   { "available": false, "reason": "no URL supplied", "affects": ["8.5", "8.7", "9.1", "10.3"] }
+  "live":   { "available": false, "reason": "no URL supplied", "affects": ["8.5", "8.7", "9.1", "10.3"] },
+  "db":     { "available": false, "reason": "no PGURL/--dsn given and no PG* environment set", "affects": ["8.1", "8.2", "3.2", "3.4", "3.8"] }
 }
 ```
 
@@ -124,7 +160,7 @@ must not be "commit it."
 
 **Score one layer group at a time, and write `scores.json` after each
 group.** This is not optional and it is the single most important instruction
-in this file: 101 probes, three evidence documents and the target's own
+in this file: 101 probes, up to four evidence documents and the target's own
 source is too much to hold reliably in one pass — pushed through in one go,
 scoring degrades quietly into plausible numbers backed by thin evidence, with
 no error to flag it. The per-group flush resets context between groups and
@@ -237,7 +273,7 @@ The finished directory:
 ```
 audit/<date>/
   scope.json
-  evidence/  static.json  live.json  mcp-*.json  tiers.json
+  evidence/  static.json  live.json  db.json  mcp-*.json  tiers.json
   scores.json
   scorecard.json  SCORECARD.md
   EXECUTIVE-SUMMARY.md
