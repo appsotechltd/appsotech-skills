@@ -12,7 +12,7 @@
       "name": "audit",
       "source": "./plugins/audit",
       "description": "Audit and assessment skills for codebases and running systems, starting with the 13-Layer App Audit: weighted score, hard-gate verdict, findings register, remediation plan",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "author": {
         "name": "Appsotech Limited",
         "email": "appsotechltd@gmail.com"

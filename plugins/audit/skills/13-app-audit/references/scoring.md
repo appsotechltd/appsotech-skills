@@ -87,3 +87,10 @@ Averages hide catastrophes. A stack with an unverified backup can still average 
 | **Serviceable** | 55–69 | Works today, fragile under load or incident |
 | **At risk** | 40–54 | Material likelihood of data loss, breach, or extended outage |
 | **Not production-viable** | <40 | Remediate before onboarding further users |
+
+**A partial audit has no band.** Bands describe a complete 101-probe run. The
+weighted overall renormalises over whatever layers are present, so a document
+covering four layers can report a high number that no band legitimately
+describes. `score.mjs` reports coverage, withholds the band, and exits 1 unless
+`--partial` acknowledges the gap — the flag admits the shortfall, it does not
+fill it.

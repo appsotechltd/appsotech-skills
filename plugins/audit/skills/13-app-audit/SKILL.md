@@ -21,12 +21,33 @@ skill's repository).
 decides the ceiling: `attested` answers are capped at 2 by the scorer, and the
 cap is not negotiable. Collect first, score second.
 
-All paths below are relative to this skill's own directory — wherever it is
-installed (`plugins/audit/skills/13-app-audit/` inside this repository
-when run as a plugin, or `~/.claude/skills/13-app-audit/` when copy-installed
-per the README) — run commands from there. Load each reference file only
-when its phase says to; a run that stops after Layer 4 must never load the
-Layer 5–13 rubric.
+## Paths
+
+Two roots are in play. **`<targetDir>` and everything under
+`<targetDir>/audit/`** belong to the system being audited. **`scripts/…` and
+`references/…`** belong to this skill, wherever it is installed.
+
+**Do not `cd` into the skill directory to run the collectors.** Doing that and
+passing a relative target — `.`, say — silently audits *the skill itself* and
+writes a complete-looking evidence file with 30-odd facts and no error. Resolve
+the scripts once instead, and stay where the auditor is:
+
+```bash
+for base in \
+  "$CLAUDE_PLUGIN_ROOT/skills/13-app-audit/scripts" \
+  "$HOME/.claude/skills/13-app-audit/scripts" \
+  ".claude/skills/13-app-audit/scripts"; do
+  [ -f "$base/score.mjs" ] && SCRIPTS="$base" && break
+done
+echo "${SCRIPTS:-NOT FOUND}"
+```
+
+Every `node "$SCRIPTS"/…` below means the directory resolved above. If it did
+not resolve, say so and stop — the collectors are the evidence, and an audit
+that skips them is Phase 4 interview with extra steps.
+
+Load each reference file only when its phase says to; a run that stops after
+Layer 4 must never load the Layer 5–13 rubric.
 
 ## Phase 1 — Scope
 
@@ -78,13 +99,13 @@ on the cover with no error.
 Run the static collector always:
 
 ```
-node scripts/collect-static.mjs <targetDir> --out <targetDir>/audit/<date>/evidence/static.json
+node "$SCRIPTS"/collect-static.mjs <targetDir> --out <targetDir>/audit/<date>/evidence/static.json
 ```
 
 Run the live collector only if the auditor gave you a reachable URL:
 
 ```
-node scripts/collect-live.mjs --url <baseUrl> [--auth-path <p>] --out <targetDir>/audit/<date>/evidence/live.json
+node "$SCRIPTS"/collect-live.mjs --url <baseUrl> [--auth-path <p>] --out <targetDir>/audit/<date>/evidence/live.json
 ```
 
 Add `--probe-rate-limit` to burst-test the auth endpoint (`--auth-path`, or
@@ -109,7 +130,7 @@ alter output or print anything), but a least-privilege role is still the
 right input, not a substitute for one:
 
 ```
-node scripts/collect-db.mjs [--dsn <connstring>] --out <targetDir>/audit/<date>/evidence/db.json
+node "$SCRIPTS"/collect-db.mjs [--dsn <connstring>] --out <targetDir>/audit/<date>/evidence/db.json
 ```
 
 This evidences 8.1 from `pg_class`/`pg_policies` as it actually stands on the
@@ -229,18 +250,34 @@ summary template) — this is the only phase that needs it.
 Run the scorer:
 
 ```
-node scripts/score.mjs <targetDir>/audit/<date>/scores.json --out <targetDir>/audit/<date>
+node "$SCRIPTS"/score.mjs <targetDir>/audit/<date>/scores.json --out <targetDir>/audit/<date>
 ```
 
-This writes `scorecard.json` and `SCORECARD.md`, and prints the overall,
-band, any fired gates, and the unverified count. **A gate firing caps the
-overall at 49 regardless of how high the weighted average is — read the
+This writes `scorecard.json` and `SCORECARD.md`, and prints coverage, the
+overall, band, any fired gates, and the unverified count. **A gate firing caps
+the overall at 49 regardless of how high the weighted average is — read the
 cover block, not the layer table, for the real verdict.**
+
+**A partial `scores.json` gets no band and exits 1.** The weighted overall
+renormalises over the layers that are present, so four layers scored well read
+as 100 — and Phase 3 writes `scores.json` after every layer group, which makes
+a half-finished file the normal state on disk. The scorer refuses rather than
+reporting it as a verdict, and the cover says `PARTIAL AUDIT` with the
+coverage counts.
+
+If you genuinely want an interim scorecard mid-audit, pass `--partial`. It
+still writes the files and still reports no band — the flag acknowledges the
+gap, it does not fill it. Do not reach for it to make a red exit go away at the
+end of a run; finish the layer groups.
+
+`scores.json` must carry the five Phase 1 `scope` keys. The scorer exits 2
+without them: a scorecard with no `ref` can never be re-audited against, which
+is the whole reason Phase 1 refuses to substitute "latest" for a real one.
 
 Re-auditing against a prior baseline:
 
 ```
-node scripts/score.mjs <targetDir>/audit/<date>/scores.json --baseline <targetDir>/audit/<prior-date>/scorecard.json --out <targetDir>/audit/<date>
+node "$SCRIPTS"/score.mjs <targetDir>/audit/<date>/scores.json --baseline <targetDir>/audit/<prior-date>/scorecard.json --out <targetDir>/audit/<date>
 ```
 
 appends a per-layer movement table and a gates-opened/gates-closed section to

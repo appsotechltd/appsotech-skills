@@ -13,7 +13,7 @@ function gateProbeLabel(probes) {
 // substring "## " (renderScorecard's callers, and the test suite, split on it to isolate
 // the cover from the rest of the document — see the "not buried" test).
 function renderCover(card) {
-  const { scope, overall, band, gates, weightedOverall } = card;
+  const { scope, overall, band, gates, weightedOverall, coverage } = card;
   const lines = ['# Audit Scorecard', ''];
 
   lines.push(`- **System:** ${scopeField(scope, 'system')}`);
@@ -21,9 +21,46 @@ function renderCover(card) {
   lines.push(`- **Environment:** ${scopeField(scope, 'environment')}`);
   lines.push(`- **Date:** ${scopeField(scope, 'date')}`);
   lines.push(`- **Auditor:** ${scopeField(scope, 'auditor')}`);
+  if (coverage) {
+    lines.push(
+      `- **Coverage:** ${coverage.scored}/${coverage.expected} probes · ` +
+      `${coverage.layersScored}/${coverage.layersExpected} layers`,
+    );
+  }
   lines.push(`- **Overall:** ${overall === null ? 'not scored (no probes evaluated)' : overall}`);
-  lines.push(`- **Band:** ${band === null ? 'n/a' : band}`);
+  // A partial audit reports no band. The weighted number renormalises over the
+  // layers that are present, so four layers scored well read as 100 —
+  // "Production-hardened" off a third of the rubric is a claim nobody can
+  // stand behind, and the cover is the line that reaches a client.
+  lines.push(
+    `- **Band:** ${
+      band === null
+        ? coverage && !coverage.complete
+          ? 'PARTIAL AUDIT — no band. Not a verdict.'
+          : 'n/a'
+        : band
+    }`,
+  );
   lines.push('');
+
+  if (coverage && !coverage.complete) {
+    lines.push(
+      `**This audit is incomplete.** ${coverage.scored} of ${coverage.expected} probes were ` +
+      'scored, and the overall above is a weighted average of only the layers present — ' +
+      'it is not comparable to a complete audit and must not be reported as one.',
+    );
+    lines.push('');
+    if (coverage.missingLayers.length > 0) {
+      lines.push(`- Layers with nothing scored: ${coverage.missingLayers.join(', ')}`);
+    }
+    if (coverage.incompleteLayers.length > 0) {
+      lines.push(
+        '- Partially scored layers: ' +
+        coverage.incompleteLayers.map((l) => `${l.layer} (${l.got}/${l.expected})`).join(', '),
+      );
+    }
+    lines.push('');
+  }
 
   if (gates.length === 0) {
     lines.push('No hard gates triggered.');

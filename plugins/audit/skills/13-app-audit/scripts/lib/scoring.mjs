@@ -9,6 +9,44 @@ export const LAYER_NAMES = {
 
 export const LAYER_PROBE_COUNTS = { 1: 8, 2: 8, 3: 9, 4: 9, 5: 7, 6: 7, 7: 7, 8: 9, 9: 7, 10: 7, 11: 7, 12: 8, 13: 8 };
 
+export const TOTAL_PROBES = Object.values(LAYER_PROBE_COUNTS).reduce((a, b) => a + b, 0);
+
+// Coverage of the rubric by the scores document.
+//
+// This exists because the weighted overall renormalises over whatever layers
+// are PRESENT: a scores.json holding one probe scored 4 produced "overall 100
+// — Production-hardened" with no complaint. Phase 3 deliberately writes
+// scores.json after each layer group, so a partial file is the expected
+// intermediate state and an interrupted run leaves exactly that on disk.
+//
+// The rest of this skill caps what it cannot evidence rather than guessing.
+// Absent probes were the one place that rule did not hold: they silently
+// improved the average instead of qualifying it.
+export function coverageOf(probes) {
+  const byLayer = {};
+  for (const id of Object.keys(probes)) {
+    const layer = Number(id.split('.')[0]);
+    byLayer[layer] = (byLayer[layer] ?? 0) + 1;
+  }
+  const missingLayers = [];
+  const incompleteLayers = [];
+  for (const [layer, expected] of Object.entries(LAYER_PROBE_COUNTS)) {
+    const got = byLayer[layer] ?? 0;
+    if (got === 0) missingLayers.push(Number(layer));
+    else if (got < expected) incompleteLayers.push({ layer: Number(layer), got, expected });
+  }
+  const scored = Object.keys(probes).length;
+  return {
+    scored,
+    expected: TOTAL_PROBES,
+    layersScored: Object.keys(byLayer).length,
+    layersExpected: Object.keys(LAYER_PROBE_COUNTS).length,
+    missingLayers,
+    incompleteLayers,
+    complete: scored >= TOTAL_PROBES && missingLayers.length === 0,
+  };
+}
+
 export const GATE_PROBES = {
   '1.4': 'G3', '3.6': 'G1', '4.3': 'G6', '5.3': 'G4', '8.1': 'G2',
   '8.3': 'G2', '8.4': 'G8', '9.1': 'G7', '12.3': 'G5', '13.2': 'G1',
@@ -141,13 +179,20 @@ export function scoreAudit(doc, opts = {}) {
   const weighted = weightedOverall(layerScores, weights);
   const overall = gates.length > 0 ? Math.min(weighted ?? 0, GATE_CAP) : weighted;
 
+  const coverage = coverageOf(doc.probes);
+
   return {
     scope: doc.scope ?? null,
     probeCount: Object.keys(doc.probes).length,
+    coverage,
     layers,
     weightedOverall: weighted,
     overall,
-    band: overall === null ? null : band(overall),
+    // A partial run reports no band. The number stays — it is useful for
+    // tracking progress mid-audit — but "Production-hardened" off four layers
+    // is a claim the evidence does not support, and it is the line that ends
+    // up in front of a client.
+    band: overall === null || !coverage.complete ? null : band(overall),
     gates,
     unverified: Object.entries(doc.probes)
       .filter(([, e]) => e.unverified)
