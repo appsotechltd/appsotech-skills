@@ -1,21 +1,28 @@
 ---
 name: appsotech-stack
 description: >
-  Build an application on the Appsotech house stack — Go API (fasthttp,
-  pgx/v5), Next.js public surfaces, React + Vite surfaces behind auth,
-  Flutter mobile, PostgreSQL, Redis, R2 storage, Zoho SMTP, LiveKit calls,
-  websocket chat, Coolify deploy. Use when asked
-  to build, scaffold, start or add an app, product, service, portal, admin
-  console, dashboard, API or mobile app; to add a feature or surface to an
-  existing product; or to set up a new project. The stack, layout, ports and
-  deployment are already decided — never ask what to build them with.
+  Build applications on the Appsotech house stack — Go API (fasthttp, pgx/v5),
+  Next.js public surfaces, React + Vite surfaces behind auth, Flutter mobile,
+  PostgreSQL, Redis, R2 storage, Zoho SMTP, LiveKit calls, websocket chat,
+  Coolify deploy — and design them to a frozen, accessibility-gated design
+  system. Use when starting a new project or product; adding a surface,
+  feature or API to an existing one; or building, designing, styling or
+  laying out any UI — a screen, page, dashboard, landing page, form,
+  component, admin panel, mobile screen, or a single-file HTML prototype.
+  Fires on "start a new project", "build me a screen", "make a prototype",
+  "put a UI on this" and "make it look good" — not only on "design" or
+  "scaffold". The stack, layout, ports and deployment are already decided:
+  never ask what to build them with.
 ---
 
 # Appsotech stack
 
+One skill, two halves. **How it is wired** — surfaces, ports, database, API,
+deploy — and **how it looks** — style, tokens, accessibility. Load this at the
+start of a project and it covers both.
+
 **The stack is not a question.** Everything below is already decided and is not
-re-litigated at the start of a run. What the operator picks is *which surfaces
-to build* and *what the product does* — nothing else.
+re-litigated at the start of a run.
 
 | Layer | What it is |
 |---|---|
@@ -31,23 +38,114 @@ to build* and *what the product does* — nothing else.
 | Object storage | Cloudflare R2, via the S3 API |
 | Transactional email | Zoho SMTP |
 | Deploy | Coolify — Docker Compose behind Traefik, the only ingress |
+| Design | pro-max generates style; elite owns tokens and the accessibility floor |
 | Tests | Go `testing`, Vitest + Testing Library, Playwright, `flutter_test` |
 
 If the operator asks for something outside this — a Rails API, a Vue frontend —
 build what they asked for and say once that it departs from the house stack.
 Do not silently substitute.
 
-All paths below are relative to this skill's own directory, wherever it is
-installed. Load a reference file only when its phase says to.
+## Design authority
 
-## Phase 1 — Scope
+Two sources, and they do not overlap: **pro-max generates, elite verifies.**
+pro-max proposes taste; elite owns structure and the accessibility floor and
+has the last word.
 
-Establish three things. Two can usually be answered without asking.
+| Decision | Authority |
+|---|---|
+| Style direction, palette values, font pairing | **pro-max**, filtered through elite |
+| Token architecture and naming (`--background`, `--primary`, dark mode) | **elite** — pro-max supplies values *into* this scheme |
+| Type scale, line-height, 45–75ch measure, max 2–3 typefaces | **elite** |
+| Spacing scale and section rhythm | **elite** |
+| Motion — transform/opacity only, `prefers-reduced-motion` honoured | **elite** — pro-max's GSAP presets are filtered through it |
+| Accessibility floor — 4.5:1 text, 3:1 focus ring, 44×44px targets, labelled inputs | **elite, non-negotiable** |
+| Responsive across mobile, tablet and desktop | **elite, non-negotiable** |
+| Light *and* dark mode on every surface | **elite, non-negotiable** |
 
-**Target directory.** Where the product goes. If the operator named a path, use
-it. If the working directory is already a product (it has `backend/` or
-`apps/`), this is an *add-to-existing* run — skip Phase 2's allocation and read
-the existing ports instead.
+"Filtered through elite" means three vetoes applied before anything is frozen:
+pro-max palettes are **not** contrast-safe and are checked; Inter, Roboto and
+Arial are never display faces whatever pro-max returns; GSAP presets that
+animate layout properties are rewritten or dropped. A style choice never wins
+against the accessibility floor — if a palette cannot meet 4.5:1, the palette
+changes.
+
+## The frozen design rule
+
+**If `design/design-system.md` exists, read it and use it. Do not re-run
+selection.**
+
+Sessions start fresh and remote: nothing outside the repository survives.
+Re-running selection means pro-max reasons from scratch and returns a different
+palette and different fonts for the same repo — a product with a new aesthetic
+every Tuesday.
+
+Re-selection happens **only** when the user asks in so many words ("restyle",
+"pick a new palette"). Never inferred from "make this look better", never
+triggered by a new surface.
+
+| File | Role | Changes when |
+|---|---|---|
+| `design/design-system.md` | Master — style, palette, fonts, rationale | explicit re-selection only |
+| `design/tokens.css` | The tokens, elite's naming | regenerated from the Master |
+| `design/tokens.dart` | Same values for Flutter, generated | regenerated from the Master |
+| `design/overrides.md` | Per-surface deviations | normal work |
+
+Tokens are **per product, not per surface**. `webapp` and `admin-web` share one
+system, or the same product looks like two.
+
+## Paths
+
+Two roots, and confusing them breaks the gate. **`design/…`, `apps/…`,
+`backend/…`** are relative to the **target project**. **`scripts/…` and
+`references/…`** are relative to **this skill's own directory**.
+
+The working directory during a run is the target project, so a bare
+`node scripts/contrast.mjs` never resolves. Resolve once, up front:
+
+```bash
+for base in \
+  "$CLAUDE_PLUGIN_ROOT/skills/appsotech-stack/scripts" \
+  "$HOME/.claude/skills/appsotech-stack/scripts" \
+  ".claude/skills/appsotech-stack/scripts"; do
+  [ -f "$base/contrast.mjs" ] && SCRIPTS="$base" && break
+done
+CONTRAST="$SCRIPTS/contrast.mjs"
+AUDIT="$SCRIPTS/audit-markup.mjs"
+RESPONSIVE="$SCRIPTS/responsive-check.mjs"
+SCAFFOLD="$SCRIPTS/scaffold.mjs"
+echo "${SCRIPTS:-NOT FOUND}"
+```
+
+If it did not resolve, say so and fall back to checking by hand against
+`references/design-tokens.md` and `references/design-gate.md` — do not skip the
+checks silently.
+
+---
+
+## Phase 0 — What kind of work is this?
+
+Three routes. Decide before doing anything, because two of them skip most of
+the scaffolding.
+
+| The request | Route |
+|---|---|
+| A new product or project | **A** — every phase, 1 → 9 |
+| A feature or surface in an existing product | **B** — skip Phases 1–3, start at 4 |
+| A standalone screen, mockup or single-file prototype | **C** — skip Phases 1–4 entirely, start at 5 |
+
+**Route C matters.** "Make me a prototype" or "build me a login screen" is not
+a request for a port block, a database name or a Coolify stack. Go straight to
+the design phases, produce the screen, and run the gate. Do not scaffold a
+product around a mockup.
+
+Route B: an existing product already has its allocation and its frozen design
+system. Read `design/design-system.md` and `docs/ports-and-databases.md` rather
+than regenerating either.
+
+## Phase 1 — Scope *(Route A)*
+
+**Target directory.** Where the product goes. If the working directory already
+has `backend/` or `apps/`, this is Route B.
 
 **Product slug.** A DNS label: lowercase, alphanumeric, no hyphens. It becomes
 `<slug>.<root-domain>`, a Go module path and a database name, so it cannot be
@@ -56,180 +154,211 @@ only if there is no reasonable candidate. `app`, `admin`, `api` and `www` are
 reserved and can never be a slug.
 
 **Existing allocations.** If a `docs/ports-and-databases.md` exists anywhere up
-the tree, it is the allocation table and it is authoritative. Pass it to the
-scaffolder with `--allocations` so the new product cannot be handed a port
-block another product is already on.
+the tree, it is authoritative. Pass it with `--allocations` so the new product
+cannot be handed a block another product is on.
 
-## Phase 2 — Pick the surfaces
+## Phase 2 — Pick the surfaces *(Route A)*
 
-Ask with `AskUserQuestion`, **both questions in a single call**, both
-`multiSelect: true`. This is the checkbox step and it is the only point where
-the operator chooses shape.
+Ask with `AskUserQuestion`, **all three questions in a single call**, each
+`multiSelect: true`. This is the only point where the operator chooses shape.
 
-Question 1 — *Which application surfaces?*
+*Which application surfaces?*
 
 | Option | Description to show |
 |---|---|
 | `platform-web` | Next.js — product marketing; a tenant signs up here. Indexed, so SSR earns its cost. |
-| `tenant-web` | Next.js — each tenant's own public site; learner signup and login. Reads the Host header to decide which organisation. |
-| `webapp` | React + Vite — the application itself, behind auth at `/app`. Never indexed, so SSR would be pure cost. |
+| `tenant-web` | Next.js — each tenant's own public site; learner signup and login. |
+| `webapp` | React + Vite — the application itself, behind auth at `/app`. Never indexed. |
 | `admin-web` | React + Vite — operator console spanning every tenant. |
 
-Question 2 — *Which services?*
+*Which services?*
 
 | Option | Description to show |
 |---|---|
 | `backend` | Go API — fasthttp + pgx/v5, served same-origin at `/v1`. |
-| `worker` | Background jobs — a second entrypoint in the API's own module, with a Postgres queue. |
+| `worker` | Background jobs — a second entrypoint in the API's own module, Postgres queue. |
 | `mobile` | Flutter — learner mobile app. |
 
-Question 3 — *Which of these does it need?*
+*Which of these does it need?*
 
 | Option | Description to show |
 |---|---|
-| Live chat | Websocket messaging. Forces Redis on: without a shared bus, a message reaches only clients on the sender's replica. |
-| Live voice / video | LiveKit calls. The API mints short-lived join tokens; media goes direct. |
-| Transactional email | Zoho SMTP. Selects the worker too — sending from a request handler makes the user wait on someone else's mail server. |
+| Live chat | Websocket messaging. Forces Redis on: without a shared bus a message reaches only the sender's replica. |
+| Live voice / video | LiveKit. The API mints short-lived join tokens; media goes direct. |
+| Transactional email | Zoho SMTP. Selects the worker too — sending from a handler makes the user wait on someone else's mail server. |
 | File uploads | Cloudflare R2, presigned, so bytes never pass through the API. |
 
 Recommend `backend` + `webapp` + `tenant-web` as the smallest coherent product
-and mark it so. Pre-select nothing in question 3.
+and mark it so. Pre-select nothing in the third question.
 
-**Redis is not a checkbox** — it comes with any API by default, for caching and
-rate limiting. Mention it rather than asking, and pass `--no-redis` only if the
-operator says they do not want it.
+**Redis is not a checkbox** — it comes with any API by default. Mention it
+rather than asking; pass `--no-redis` only if the operator declines it.
 
 There is deliberately **no gateway option**. Coolify's Traefik is the only
 ingress; a second proxy doing on-demand TLS would have to own `:443`, which
-Traefik already does. If someone asks for the Caddy gateway, explain that and
-point at `references/deploy-coolify.md` for how a tenant's own domain is
-routed instead.
+Traefik already does.
 
 Then read `references/layout.md` and honour every warning the scaffolder emits
-about an incoherent selection — web surfaces without an API, `webapp` without
-`tenant-web`.
+about an incoherent selection.
 
-## Phase 3 — Allocate and scaffold
+## Phase 3 — Allocate and scaffold *(Route A)*
 
 ```
-node scripts/scaffold.mjs <slug> --surfaces <comma,separated> \
+node "$SCAFFOLD" <slug> --surfaces <comma,separated> \
   --out <targetDir> --root-domain <domain> \
   [--worker] [--realtime chat,video] [--storage] [--mail] [--no-redis] \
   [--allocations <path/to/ports-and-databases.md>]
 ```
 
-Run it with `--dry-run` first and show the operator the port block, database
-name and file list. Then run it for real.
+Run with `--dry-run` first and show the port block, database name and file
+list. Then run it for real.
 
-The scaffolder never overwrites an existing file — it reports `(exists,
-skipped)`. That makes a second run over a product safe, which is the only
-reason anyone runs one.
+It never overwrites an existing file — it reports `(exists, skipped)`. That is
+what makes a second run over a product safe.
 
-What it writes is everything the conventions decide by themselves: manifests,
-configs, Dockerfiles, the process entrypoint, the RFC 7807 error envelope, the
-`{"data": ...}` response envelope, CORS and tenant middleware, health and
-readiness routes, the Coolify compose stack. What it does not write is any
-domain code at all. That is Phase 4 onward, and it is the larger part of the
-work.
-
-Confirm the skeleton stands up before building on it:
+Confirm the skeleton stands up:
 
 ```
 cd <targetDir>/backend && go mod tidy && go build ./...
 cd <targetDir>/apps/<surface> && npm install && npm run build
 ```
 
-`go mod tidy` first — it has to run at all, because the scaffold ships no
-`go.sum`. It will populate the `// indirect` block, which is expected. What it
-must **not** do is change the direct `require` block: the generated `go.mod`
-declares exactly what the generated code imports. If a direct dependency
-disappears, a template declared something nothing imports.
+`go mod tidy` will populate the `// indirect` block; what it must **not** do is
+change the direct `require` block.
 
-## Phase 4 — Domain
+## Phase 4 — Domain *(Routes A and B)*
 
-Now find out what the product actually does. This is a real interview, not a
-form — one focused round, then build.
+Find out what the product actually does. One focused round, then build.
 
-Establish:
+- **Entities and their relationships** — what exists, what owns what, what
+  cascades on delete.
+- **Actors and what each may do** — this becomes the RBAC table, and a role
+  discovered later is a migration plus an audit of every handler.
+- **The tenant boundary** — what "one organisation" means here.
+- **The one workflow that matters most** — build it end to end first.
 
-- **Entities and their relationships.** What things exist, what each owns, what
-  cascades when one is deleted.
-- **Actors and what each may do.** Every role that touches the system. This
-  becomes the RBAC table, and a role discovered later is a migration plus an
-  audit of every handler.
-- **The tenant boundary.** What "one organisation" means here. Every row in
-  every table belongs to exactly one, and RLS enforces it.
-- **The one workflow that matters most.** Build that end to end first, so
-  there is something real to react to before the long tail is built.
+Write the answers to `docs/domain.md` before writing code.
 
-Write the answers to `docs/domain.md` in the target repository before writing
-code. It is what the migrations, the RBAC table and the screens are all
-generated from, and it is what a reviewer checks them against.
+## Phase 5 — Design: select
 
-## Phase 5 — Build
+**Skip entirely if `design/design-system.md` exists.** Read it and go to
+Phase 6.
 
-Read `references/backend-go.md`, then `references/web-surfaces.md`, then
-`references/feature-build.md`. Read `references/services.md` if the product
-took any of caching, chat, calls, storage or email. Read
-`references/mobile-flutter.md` only if `mobile` was selected.
+Resolve the design engine (below), then read `references/design-phase.md`. It
+carries the questions to answer before querying anything — who uses this, what
+single action they should take, and what one thing they will remember — plus
+the exact query forms.
 
-Two rules from `services.md` apply to every feature and are worth carrying in
-before you read it:
+Ask for four things in order: **product type**, **style direction**,
+**palette**, **font pairing**. Selection happens **before any markup exists**;
+choosing a palette after the components are built is where hardcoded hex comes
+from.
 
-- **Cache keys, websocket rooms, LiveKit room names and R2 object keys are all
-  namespaced by tenant.** None of them is a database row, so row-level security
-  does not cover any of them.
-- **Every job handler must be idempotent.** Delivery is at-least-once — a
-  worker that dies after doing the work runs the job again when it is reaped.
+### Resolving the design engine
+
+Guard on Python — pro-max is a Python script:
+
+```bash
+python3 --version || echo "NO PYTHON"
+
+for p in \
+  ".claude/skills/ui-ux-pro-max/scripts/search.py" \
+  "$HOME/.claude/plugins/"*"/ui-ux-pro-max/.claude/skills/ui-ux-pro-max/scripts/search.py" \
+  "$HOME/.claude/skills/ui-ux-pro-max/scripts/search.py"; do
+  [ -f "$p" ] && SEARCH="$p" && break
+done
+```
+
+`$CLAUDE_PLUGIN_ROOT` is deliberately absent from that list: it resolves to
+*this* plugin, never pro-max's, so it can only produce a false negative.
+
+| Tier | Condition | Action |
+|---|---|---|
+| 1 | Script found | Query it with `--json`. Deterministic, preferred. |
+| 2 | Not found, skill installed | Invoke `ui-ux-pro-max` by name; ask for style, palette, font pairing. |
+| 3 | Neither, or no Python | Read `references/style-directions.md`, proceed, and **tell the user** the engine was unavailable. |
+
+**Never fail the build over this.** Only style *breadth* degrades — 84 styles
+down to 12 curated directions. Tokens, the accessibility floor, the patterns
+and the gate are vendored and identical in all three tiers.
+
+## Phase 6 — Design: freeze
+
+Read `references/design-tokens.md`, then write:
+
+- `design/tokens.css` — pro-max's values in **elite's naming scheme**, light
+  and dark blocks, both required
+- `design/design-system.md` — style, palette, fonts and *why*, so the next
+  session inherits the reasoning and not just the values
+- `design/tokens.dart` — **only if there is a Flutter surface.** Generated from
+  `tokens.css`, never hand-maintained beside it: two hand-kept copies drift,
+  and the drift shows as an app that is subtly a different product from its own
+  website.
+
+Then gate it before committing:
+
+```
+node "$CONTRAST" design/tokens.css
+```
+
+Non-zero exit means a pair is below the floor. **Fix the token and re-run.**
+Catching this here costs one token; catching it in Phase 9 costs an audit of
+every component that consumed it.
+
+**No palette values inline in markup, ever.**
+
+## Phase 7 — Build
+
+Read `references/backend-go.md`, `references/web-surfaces.md` and
+`references/feature-build.md`. Then, as they apply:
+
+| Reference | When |
+|---|---|
+| `references/patterns-web.md` | a dashboard, landing page or Tailwind/React component |
+| `references/mobile-flutter.md` | Flutter — how the app is wired: API client, auth, offline |
+| `references/patterns-mobile.md` | Flutter — how it looks: `ThemeData`, light/dark, responsive |
+| `references/services.md` | the product took jobs, caching, chat, calls, storage or email |
+
+The two Flutter files are deliberately separate and both apply: one is
+architecture, the other is theming, and a Flutter surface needs both.
 
 **Build vertically, one feature at a time — never layer by layer.** A feature
-is done when a real user action reaches Postgres and comes back. Finishing all
-the migrations before any handler exists means nothing is demonstrable until
-everything is, and the schema is never corrected by contact with a UI.
+is done when a real user action reaches Postgres and comes back.
 
-For each feature, in order:
+1. **Migration** — numbered `.up.sql`/`.down.sql`; every table gets its tenant
+   column and RLS policy in the same migration
+2. **Feature package** — `internal/<feature>/` with all four files
+3. **Routes** — registered in `cmd/api/main.go` under `/v1`
+4. **Go tests** — table-driven, against a real database, including the
+   tenant-boundary test
+5. **API client and screens** — typed client, TanStack Query hooks, then the
+   screens, styled from the tokens
+6. **Component tests** — Vitest + Testing Library; one Playwright spec for the
+   workflow named in Phase 4
 
-1. **Migration** — numbered `.up.sql`/`.down.sql` pair. Every table carries a
-   tenant column, and every table gets an RLS policy in the same migration.
-2. **Feature package** — `internal/<feature>/` with the four files:
-   `model.go`, `queries.go`, `service.go`, `handler.go`. Never fewer.
-3. **Routes** — registered in `cmd/api/main.go` under `/v1`.
-4. **Go tests** — the service against a real database, the handler against its
-   router. Table-driven.
-5. **API client and screens** — typed client in `src/services/`, TanStack Query
-   hooks, then the screens. Anything with a visual surface goes through the
-   **`design-pipeline`** skill: it owns style, tokens, responsive behaviour,
-   light/dark and the accessibility gate. This skill owns how the surface is
-   wired; that one owns how it looks.
-6. **Component tests** — Vitest + Testing Library. One Playwright spec for the
-   workflow named in Phase 4.
+Three rules apply to every feature:
 
-Then the next feature. Do not start one before the last is green.
+- **Cache keys, websocket rooms, LiveKit room names and R2 object keys are
+  tenant-namespaced.** None is a database row, so RLS covers none of them.
+- **Every job handler is idempotent.** Delivery is at-least-once.
+- **No component names a raw colour.** It is broken in dark mode and nobody
+  finds out until they look.
 
-## Phase 6 — Deploy
+## Phase 8 — Deploy *(Routes A and B)*
 
-Read `references/deploy-coolify.md`.
-
-The failure modes that produce no error message anywhere:
+Read `references/deploy-coolify.md`. The failure modes that produce no error
+anywhere:
 
 - A service not joined to the **external `coolify` network** is unreachable.
-  Traefik has nothing to route to; the container is healthy and the logs are
-  clean.
-- Traefik routes by **label**, never by `ports:`. Publishing a host port does
-  not make a service reachable and does expose it beside TLS rather than
-  behind it.
+- Traefik routes by **label**, never by `ports:`.
 - The organisation-host rule is `HostRegexp`, and **v2 and v3 syntax differ**.
-  A v3 rule on a v2 Traefik simply never matches. Check the version before
-  debugging a 404.
-- Wildcard certificates for `*.<product>.<root>` are issued over **DNS-01
-  only**. Without a DNS credential on the certresolver, tenant subdomains fail
-  at TLS handshake — at request time, not deploy time.
+- Wildcard certificates are issued over **DNS-01 only**.
 
-## Phase 7 — Verify
+## Phase 9 — Verify and gate
 
-Do not report a surface as built on the strength of having written it.
+Do not report anything as built on the strength of having written it.
 
-| Surface | Command |
+| What | Command |
 |---|---|
 | Go | `go mod tidy && go build ./... && go vet ./... && go test ./...` |
 | Next.js | `npm run build && npm run typecheck` |
@@ -239,30 +368,59 @@ Do not report a surface as built on the strength of having written it.
 | Design tokens | `node "$CONTRAST" design/tokens.css` |
 | UI source | `node "$AUDIT" apps/<surface>/src` |
 | Rendered UI (Vite) | `node "$RESPONSIVE" --serve apps/<surface>/dist` |
-| Rendered UI (Next.js) | `npm run start` in the surface, then `node "$RESPONSIVE" http://localhost:<port>` |
+| Rendered UI (Next.js) | `npm run start`, then `node "$RESPONSIVE" http://localhost:<port>` |
 
-Run every one that applies. Report what passed, what failed with its output,
-and anything left unbuilt. A phase that was skipped is said plainly, not
-omitted.
+**Any surface under `apps/` is a UI surface, so the design rows apply.** If
+`design/tokens.css` does not exist, Phases 5–6 never ran — do them before
+reporting the surface built. A surface that compiles is not a surface that is
+finished.
 
-**Any surface under `apps/` is a UI surface, so the design rows apply to it.**
-If `design/tokens.css` does not exist, the **`design-pipeline`** skill never
-ran — run it before reporting the surface built. A surface that compiles is not
-a surface that is finished, and a screen written before the tokens were frozen
-is a screen with colours that will not follow the design system.
+A Vite surface builds to a static `dist/`, which `--serve` hosts directly. A
+Next.js surface builds to `.next/` and needs its own server. `apps/mobile` is a
+human pass: `flutter analyze` covers the code, and layout at the largest OS
+text scale and in landscape does not automate.
 
-A Vite surface builds to a static `dist/`, which `--serve` can host directly. A
-Next.js surface builds to `.next/` and needs its own server, so start it and
-pass the URL — pointing `--serve` at `.next/` finds no `index.html` and is
-refused rather than reporting an empty page as clean. `apps/mobile` is checked
-by hand: `flutter analyze` covers the code, and layout at the largest OS text
-scale and in landscape is a human pass.
+Then walk `references/design-gate.md` end to end. The scripts cover the items
+marked `[auto]`; the rest are judgement calls — whether the tablet layout is
+designed or merely fits, whether dark mode was designed or inverted, whether
+the memorable element survived into the code.
 
-`$CONTRAST`, `$AUDIT` and `$RESPONSIVE` are resolved by `design-pipeline`'s own
-**Paths** section — read it rather than guessing at the paths, and do not copy
-its resolution loop here. Two copies of a path lookup drift, and an unanchored
-one silently makes the gate unrunnable.
+Report what passed, what failed with its output, and anything left unbuilt. A
+phase that was skipped is said plainly, not omitted.
 
-Finally, update the allocation table — `docs/ports-and-databases.md` — with the
-new product's block, API port and database. A product missing from that table
-is a collision waiting for the next one.
+Finally, update `docs/ports-and-databases.md` with the new product's block, API
+port and database. A product missing from that table is a collision waiting for
+the next one.
+
+## No filesystem — the claude.ai chat case
+
+No repository, no shell, no persistence. This is **Route C by definition**, and
+four phases run differently.
+
+| Phase | In chat |
+|---|---|
+| 0 | Route C. There is no project to scaffold. |
+| 5 | No Python, so **tier 3 by definition**. Use `references/style-directions.md` and say the range was the twelve. |
+| 6 | Nothing to write to. Put the `:root` and `.dark` blocks **at the top of the artefact**, and paste the summary into the reply so the user can commit it. |
+| 9 | The scripts cannot run. Walk the checklist by hand — the palettes in `style-directions.md` are pre-verified so the numbers need not be recomputed. |
+
+**The frozen design rule still applies, with the user as the store.** Ask
+whether a palette already exists before selecting. A user who pastes their
+tokens in has frozen them, and re-selecting over the top is the same drift
+arriving by a different route.
+
+Never invent a palette when `style-directions.md` covers the case.
+
+## Boundary
+
+`13-layer-app-audit` is independent and must stay that way — it runs on
+inherited codebases that never touched this skill. This skill may reference the
+audit; **the audit never references this skill.**
+
+## Attribution
+
+`references/design-tokens.md`, `patterns-web.md`, `design-gate.md` and the
+direction list in `style-directions.md` are vendored from the
+**elite-frontend-ux** skill and reorganised by phase. `ui-ux-pro-max` is *not*
+vendored — it is queried where installed, and is MIT licensed,
+© Next Level Builder, github.com/nextlevelbuilder/ui-ux-pro-max-skill.

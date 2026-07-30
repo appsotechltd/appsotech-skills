@@ -20,10 +20,37 @@ On Windows (PowerShell):
 
 ## Skills
 
-### `design-pipeline`
+### `appsotech-stack`
 
-Designs and builds UI against a **frozen, project-wide design system**. Two
-authorities that do not overlap: [`ui-ux-pro-max`][promax] generates style,
+**One skill for a whole project** — how it is wired, and how it looks. Load it
+at the start and it covers the stack, the scaffold, the design system and the
+gate.
+
+The stack, directory layout, port allocation and deployment are already
+decided; a run never asks what to build things with. It asks two things: which
+surfaces to build (a checklist), and what the product does.
+
+| Surface | What it is |
+|---|---|
+| `platform-web` | Next.js — product marketing |
+| `tenant-web` | Next.js — a tenant's own public site |
+| `webapp` | React + Vite — the application, behind auth at `/app` |
+| `admin-web` | React + Vite — operator console across all tenants |
+| `mobile` | Flutter — learner mobile app |
+| `backend` | Go — the product API, same-origin at `/v1` |
+
+Opted into per product: a **Go worker** over a Postgres job queue; **Redis**
+for caching, rate limiting and pub/sub; **fasthttp websockets** for live chat;
+**LiveKit** for voice and video; **Cloudflare R2**; **Zoho SMTP**.
+
+Phase 0 routes the run, so the skill is not all-or-nothing: a new product walks
+every phase, an existing one skips allocation, and a standalone screen or
+single-file prototype skips the scaffolding entirely and goes straight to
+design. Asking for a mockup never produces a port block and a Coolify stack.
+
+### Design
+
+Two authorities that do not overlap: [`ui-ux-pro-max`][promax] generates style,
 palette and font pairing; the vendored `elite-frontend-ux` owns token
 architecture, the type and spacing scales, responsive behaviour, light/dark and
 the accessibility floor — and has the veto.
@@ -33,26 +60,31 @@ The load-bearing rule is persistence. Cloud sessions start fresh, so if
 the same repo gets a different palette every session and the product drifts.
 
 Selection degrades in three tiers — query the script, invoke the skill by name,
-or fall back to twelve curated directions in
-`references/style-directions.md`. Only *style breadth* degrades: tokens,
-patterns, the accessibility floor and the gate are vendored and identical in
-all three, so a chat session with no filesystem still produces a compliant,
-tokenised interface.
+or fall back to twelve curated directions in `references/style-directions.md`.
+Only *style breadth* degrades: tokens, patterns, the accessibility floor and
+the gate are vendored and identical in all three, so a chat session with no
+filesystem still produces a compliant, tokenised interface.
 
-Three scripts make the gate mechanical rather than aspirational; **14 checklist
-items are marked `[auto]`**, and the rest stay human because they are judgement
+### The gate
+
+Four scripts make it mechanical rather than aspirational; **14 checklist items
+are marked `[auto]`**, and the rest stay human because they are judgement
 calls, not leftovers.
 
-`scripts/responsive-check.mjs` loads the page in Chromium at 320, 768 and
-1280 in both colour schemes. It catches what reading a stylesheet cannot: a
-fixed-width element pushing the page sideways at 320, tap targets under 44px as
-actually laid out, form controls under 16px (below which iOS zooms on focus),
-and a dark block that was written but never wired — detected by comparing the
-rendered body under each scheme. Content inside an `overflow-x:auto` container
-and inline links in body copy are exempt, because both are the prescribed
-pattern. Playwright is not bundled: the script resolves it from the project or
-a global install and exits 3 with an explanation when absent.
+`scripts/scaffold.mjs` allocates the product's block of ten development ports
+and its own PostgreSQL database, then writes everything the conventions decide
+by themselves — manifests, TypeScript configs, Dockerfiles, the RFC 7807 error
+envelope, CORS and tenant middleware, health and readiness routes, and the
+Coolify compose stack with every surface routed. It never overwrites an
+existing file, so a second run over a product is safe. Domain code is not
+scaffolded: that is the feature phase, built one vertical slice at a time.
 
+`scripts/contrast.mjs` gates the palette at freeze time rather than at review.
+pro-max palettes are not contrast-safe — its own CRM palette pairs `#FFFFFF` on
+`#3B82F6` at 3.68:1, which passes the 3:1 UI threshold and fails body text. Low
+contrast *borders* are reported but never fail the run: WCAG 1.4.11 covers
+borders that identify a control, not decorative separators, and failing them
+would fail every mainstream design system on its first run.
 
 `scripts/audit-markup.mjs` reads the source and fails on colours declared
 outside `design/`, dynamic Tailwind classes, click handlers on non-interactive
@@ -64,48 +96,20 @@ the token check never sees the component. Precision is the design constraint:
 Arial as a fallback are all explicitly exempt, because a linter that fires on
 correct code is one people learn to skip.
 
-`scripts/contrast.mjs` gates the palette at freeze time rather than at review.
-pro-max palettes are not contrast-safe — its own CRM palette pairs `#FFFFFF` on
-`#3B82F6` at 3.68:1, which passes the 3:1 UI threshold and fails body text. Low
-contrast *borders* are reported but never fail the run: WCAG 1.4.11 covers
-borders that identify a control, not decorative separators, and failing them
-would fail every mainstream design system on its first run.
-
-[promax]: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
-
-### `appsotech-stack`
-
-Builds an application on the Appsotech house stack. The stack, the directory
-layout, the port allocation and the deployment are already decided — a run
-never asks what to build things with. It asks two things: which surfaces to
-build (a checklist), and what the product does.
-
-Surfaces are the fixed set every product is assembled from:
-
-| Surface | What it is |
-|---|---|
-| `platform-web` | Next.js — product marketing |
-| `tenant-web` | Next.js — a tenant's own public site |
-| `webapp` | React + Vite — the application, behind auth at `/app` |
-| `admin-web` | React + Vite — operator console across all tenants |
-| `mobile` | Flutter — learner mobile app |
-| `backend` | Go — the product API, same-origin at `/v1` |
-
-Alongside them, opted into per product: a **Go worker** over a Postgres job
-queue; **Redis** for caching, rate limiting and pub/sub; **fasthttp
-websockets** for live chat; **LiveKit** for voice and video; **Cloudflare R2**
-for object storage; **Zoho SMTP** for transactional email.
-
-`scripts/scaffold.mjs` allocates the product's block of ten development ports
-and its own PostgreSQL database, then writes everything the conventions decide
-by themselves — manifests, TypeScript configs, Dockerfiles, the RFC 7807 error
-envelope, CORS and tenant middleware, health and readiness routes, and the
-Coolify compose stack with every surface routed. It never overwrites an
-existing file, so a second run over a product is safe. Domain code is not
-scaffolded: that is the feature phase, built one vertical slice at a time.
+`scripts/responsive-check.mjs` loads the page in Chromium at 320, 768 and 1280
+in both colour schemes. It catches what reading a stylesheet cannot: a
+fixed-width element pushing the page sideways at 320, tap targets under 44px as
+actually laid out, form controls under 16px (below which iOS zooms on focus),
+and a dark block that was written but never wired — detected by comparing the
+rendered body under each scheme. Content inside an `overflow-x:auto` container
+and inline links in body copy are exempt, because both are the prescribed
+pattern. Playwright is not bundled: the script resolves it from the project or
+a global install and exits 3 with an explanation when absent.
 
 There is no separate gateway. Coolify's Traefik is the only ingress — a proxy
 doing on-demand TLS would have to own `:443`, which Traefik already does.
+
+[promax]: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
 
 ### `13-app-audit`
 
@@ -152,7 +156,6 @@ Run tests with:
 
     node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs
     node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
-    node --test plugins/build/skills/design-pipeline/tests/*.test.mjs
 
 Requires **Node 22 or later** — the code uses `import.meta.dirname` and the
 tests rely on `node --test`'s glob-argument support, neither of which exist
