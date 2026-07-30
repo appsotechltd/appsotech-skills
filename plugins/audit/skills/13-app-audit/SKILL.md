@@ -13,8 +13,9 @@ description: >
 # 13-Layer App Audit
 
 Scores 101 probes across 13 layers from collected evidence, applies eight hard
-gates, and writes a scorecard, findings register and remediation plan into
-`audit/<date>/` in the **target** repository (not this skill's repository).
+gates, and writes a scorecard, an executive summary, findings register and
+remediation plan into `audit/<date>/` in the **target** repository (not this
+skill's repository).
 
 **Do not score from the README or from what anyone tells you.** Evidence class
 decides the ceiling: `attested` answers are capped at 2 by the scorer, and the
@@ -186,8 +187,8 @@ to clear a probe.
 ## Phase 5 — Report
 
 Read `references/report-templates.md` (layer ownership map, findings-register
-schema, severities, remediation sequencing, report structure) — this is the
-only phase that needs it.
+schema, severities, remediation sequencing, report structure, executive
+summary template) — this is the only phase that needs it.
 
 Run the scorer:
 
@@ -211,6 +212,16 @@ appends a per-layer movement table and a gates-opened/gates-closed section to
 
 Then write, by hand, into `<targetDir>/audit/<date>/`:
 
+- **`EXECUTIVE-SUMMARY.md`** — one page, no jargon: no probe IDs, no layer
+  numbers, no evidence-class vocabulary. Written for a founder or client
+  sponsor deciding whether to spend money, not the engineer who will do the
+  work. Leads with any hard gates that fired and the P0 findings, each
+  translated into what it means commercially (money, customers, legal
+  exposure, downtime) rather than technically, then the band in plain
+  language and what to do first. Use the template in
+  `references/report-templates.md` §8, and write it last — after
+  `FINDINGS.md` and `REMEDIATION.md` exist below, since it draws its content
+  from both.
 - **`FINDINGS.md`** — the findings register: one row per finding (ID,
   layer/probe, title, severity P0–P3, hard gate or blank, evidence, impact,
   likelihood, effort, recommendation, owner, target date, status), sorted by
@@ -229,6 +240,7 @@ audit/<date>/
   evidence/  static.json  live.json  mcp-*.json  tiers.json
   scores.json
   scorecard.json  SCORECARD.md
+  EXECUTIVE-SUMMARY.md
   FINDINGS.md  REMEDIATION.md
 ```
 
