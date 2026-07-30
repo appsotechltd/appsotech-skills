@@ -65,7 +65,13 @@ Order by impact against effort, but override the ordering for two categories: an
 6. **Evidence appendix** — everything needed to reproduce the assessment
 7. **Re-audit date** — set it in the report, or it will not happen
 
-## 8. Executive summary template
+## Executive summary template
+
+This section is new to this file, not carried from the source methodology
+document like §3, §6 and §7 above — the source's own §8 is "Re-audit
+cadence", a different topic, so this section is deliberately left unnumbered
+rather than reusing "§8" for something else. Reference it by name
+("the executive summary template"), not by number.
 
 This is the one page of the whole audit a founder, board member or client
 sponsor actually reads. They are deciding whether to spend money — on

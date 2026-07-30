@@ -515,6 +515,62 @@ export function summarizeGovulncheckOutput(stdout) {
   return { summary, findingLines };
 }
 
+// Pure interpretation of a spawnSync-shaped result ({ error, status, stdout,
+// stderr }), split out from the actual spawnSync call below for the same
+// reason summarizeGovulncheckOutput is exported: it lets the exit-status
+// handling be exercised with a constructed result object in a unit test,
+// without needing the real binary (which is absent on the machine this was
+// written on) or a mocking library (none exists under this project's
+// zero-runtime-dependency constraint).
+export function interpretGovulncheckResult(res) {
+  // A spawn failure (tool not on PATH, most commonly — govulncheck is an
+  // opt-in install, not part of the Go toolchain) is categorically
+  // different from a clean scan that found nothing, and must never be
+  // reported in a way that could be read as "no vulnerabilities found".
+  if (res.error) {
+    return {
+      ok: false,
+      reason: `govulncheck could not be invoked (${res.error.code ?? res.error.message}) — install with "${GOVULNCHECK_INSTALL_CMD}" and ensure it is on PATH`,
+    };
+  }
+
+  // Unlike plain-text mode (where a non-zero exit means "vulnerabilities
+  // found"), govulncheck's own docs are explicit that -json changes this:
+  // "It also exits successfully if [...] '-json' [...] is provided,
+  // regardless of the number of detected vulnerabilities." With -json, exit
+  // 0 covers *both* a clean scan and a scan that found things — the findings
+  // themselves are read from the JSON, not signalled by the exit code — so
+  // any non-zero status here means the run genuinely failed partway through
+  // (a build error somewhere under ./..., or failing to reach the
+  // vulnerability database, plausible in a network-restricted audit
+  // environment) and must not be treated as data.
+  //
+  // This check has to happen *before* stdout is trusted: govulncheck's own
+  // scan runner (golang/vuln's internal/scan/run.go) writes the `config`
+  // message to stdout before package loading even begins, so a run that
+  // fails partway can still have emitted one complete, valid JSON line —
+  // which would otherwise parse as an empty-but-valid result and read
+  // exactly like a genuine "found nothing" scan. The exit status is what
+  // actually disambiguates the two; content shape alone cannot.
+  if (res.status !== 0) {
+    const stderrExcerpt = (res.stderr ?? '').trim().slice(0, 500);
+    return {
+      ok: false,
+      reason: `govulncheck exited with status ${res.status} (run failed before completing)${stderrExcerpt ? `: ${stderrExcerpt}` : ''}`,
+    };
+  }
+
+  if (!res.stdout) {
+    return { ok: false, reason: 'govulncheck produced no output to parse' };
+  }
+
+  const parsed = summarizeGovulncheckOutput(res.stdout);
+  if (!parsed) {
+    return { ok: false, reason: 'govulncheck output could not be parsed as newline-delimited JSON' };
+  }
+  return { ok: true, ...parsed };
+}
+
 function runGovulncheck(dir) {
   // Unlike npm's Windows shim (a .cmd file that CreateProcess cannot launch
   // directly, per Node's CVE-2024-27980 fix — hence shell: true on the npm
@@ -531,30 +587,7 @@ function runGovulncheck(dir) {
     maxBuffer: AUDIT_MAX_BUFFER,
     timeout: AUDIT_TIMEOUT_MS,
   });
-
-  // A spawn failure (tool not on PATH, most commonly — govulncheck is an
-  // opt-in install, not part of the Go toolchain) is categorically
-  // different from a clean scan that found nothing, and must never be
-  // reported in a way that could be read as "no vulnerabilities found".
-  if (res.error) {
-    return {
-      ok: false,
-      reason: `govulncheck could not be invoked (${res.error.code ?? res.error.message}) — install with "${GOVULNCHECK_INSTALL_CMD}" and ensure it is on PATH`,
-    };
-  }
-
-  // govulncheck exits non-zero (status 3) when it finds vulnerabilities —
-  // that is data, not a failed run, exactly like npm audit above — so
-  // stdout is read unconditionally regardless of res.status.
-  if (!res.stdout) {
-    return { ok: false, reason: 'govulncheck produced no output to parse' };
-  }
-
-  const parsed = summarizeGovulncheckOutput(res.stdout);
-  if (!parsed) {
-    return { ok: false, reason: 'govulncheck output could not be parsed as newline-delimited JSON' };
-  }
-  return { ok: true, ...parsed };
+  return interpretGovulncheckResult(res);
 }
 
 export function dependencyFacts(dir, roots) {

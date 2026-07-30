@@ -218,8 +218,8 @@ Then write, by hand, into `<targetDir>/audit/<date>/`:
   work. Leads with any hard gates that fired and the P0 findings, each
   translated into what it means commercially (money, customers, legal
   exposure, downtime) rather than technically, then the band in plain
-  language and what to do first. Use the template in
-  `references/report-templates.md` §8, and write it last — after
+  language and what to do first. Use the executive summary template in
+  `references/report-templates.md`, and write it last — after
   `FINDINGS.md` and `REMEDIATION.md` exist below, since it draws its content
   from both.
 - **`FINDINGS.md`** — the findings register: one row per finding (ID,
@@ -281,11 +281,18 @@ audit/<date>/
 - **`node --test <directory>` throws `MODULE_NOT_FOUND` on Node 24.** Always
   glob the files explicitly:
   `node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs`.
-- **Three tests shell out to real `npm` and `go` on PATH** (`npm audit is
-  actually invoked`, `go list runs`, `a partial npm audit failure across
-  roots reconciles`) — deliberate integration tests, no mocking. Contributors
-  without Go installed will see 3 failures; that's expected, not a
-  regression in this skill.
+- **Several tests shell out to real `npm` and `go` on PATH** — deliberate
+  integration tests, no mocking. Only two of them actually require `go`
+  specifically (measured by stripping it from PATH and re-running):
+  `go list runs and reports a real result for the go root`, and
+  `govulncheck absence on a root where go list already succeeded reconciles
+  into a fact, never unavailable (existing 8.4 contract)` (its fixture
+  relies on `go list` succeeding so the govulncheck failure has other 8.4
+  evidence to be reconciled against). `npm audit is actually invoked` and
+  `a partial npm audit failure across roots reconciles` need `npm`, not
+  `go`, and still pass with Go absent. Contributors without Go installed
+  will see exactly those 2 failures; that's expected, not a regression in
+  this skill.
 - **`card.scope` keys are exact:** `system`, `ref`, `environment`, `date`,
   `auditor`. Anything else renders that cover field blank, with no error to
   catch the typo.

@@ -14,6 +14,7 @@ import {
   bundleFacts,
   collectStatic,
   summarizeGovulncheckOutput,
+  interpretGovulncheckResult,
 } from '../scripts/lib/repo.mjs';
 
 const TARGET = join(import.meta.dirname, 'fixtures', 'target');
@@ -274,7 +275,20 @@ test('summarizeGovulncheckOutput groups multiple findings for the same OSV and k
 });
 
 test('summarizeGovulncheckOutput reports a positive clean-scan summary when no findings are present', () => {
-  const ndjson = JSON.stringify({ config: { protocol_version: 'v1.0.0', scan_level: 'symbol' } });
+  // A bare config-only message is *not* used as the clean-scan fixture here
+  // on purpose: govulncheck's own JSON stream has no explicit "scan
+  // complete" message (see golang/go#62340 — still open), and its scan
+  // runner writes `config` before package loading even begins, so
+  // config-only is exactly the shape a run that failed immediately would
+  // also produce. Content shape alone can never fully prove completion —
+  // that's what interpretGovulncheckResult's exit-status check is for (see
+  // below) — so this fixture instead includes a realistic progress message
+  // too, to at least exercise "more happened than just startup" rather than
+  // silently reusing the ambiguous shape as if it settled the question.
+  const ndjson = [
+    JSON.stringify({ config: { protocol_version: 'v1.0.0', scanner_name: 'govulncheck', scan_level: 'symbol' } }),
+    JSON.stringify({ progress: { message: 'Scanning your code and 12 packages across 3 dependent modules for known vulnerabilities...' } }),
+  ].join('\n');
   const result = summarizeGovulncheckOutput(ndjson);
   assert.equal(result.findingLines.length, 0);
   assert.match(result.summary, /found no known vulnerabilities/i);
@@ -283,6 +297,60 @@ test('summarizeGovulncheckOutput reports a positive clean-scan summary when no f
 test('summarizeGovulncheckOutput returns null when stdout has no parseable JSON at all', () => {
   assert.equal(summarizeGovulncheckOutput(''), null);
   assert.equal(summarizeGovulncheckOutput('not json\nalso not json'), null);
+});
+
+// --- interpretGovulncheckResult: exit status must gate stdout, not just error
+//
+// With `-json`, govulncheck's own docs state it "exits successfully
+// (regardless of the number of detected vulnerabilities)" — so exit 0 covers
+// both a clean scan and a scan that found things, and any *non-zero* exit
+// means the run genuinely failed partway through. That matters because the
+// scan runner writes the `config` message before package loading begins, so
+// a run that fails immediately after (a build error under ./..., or no
+// network access to the vulnerability database) can still emit one
+// complete, parseable JSON line — which, if stdout were trusted without
+// checking status first, would be indistinguishable from a genuine
+// zero-findings result.
+
+test('interpretGovulncheckResult treats a non-zero exit as a failed run even when stdout parses as a valid (but incomplete) clean-looking result', () => {
+  const res = {
+    error: null,
+    status: 1,
+    stdout: JSON.stringify({ config: { protocol_version: 'v1.0.0', scan_level: 'symbol' } }) + '\n',
+    stderr: 'go: build failed: missing go.sum entry\n',
+  };
+  const result = interpretGovulncheckResult(res);
+  assert.equal(result.ok, false, 'a non-zero exit must never be treated as a successful (even if empty) scan');
+  assert.match(result.reason, /status 1/);
+  assert.match(result.reason, /missing go\.sum entry/, 'stderr should be surfaced to explain the real failure');
+  assert.doesNotMatch(
+    result.reason ?? '',
+    /found no known vulnerabilit/i,
+    'must not be phrased as if it were a clean scan',
+  );
+});
+
+test('interpretGovulncheckResult reports a real clean scan when status is 0', () => {
+  const res = {
+    error: null,
+    status: 0,
+    stdout: [
+      JSON.stringify({ config: { protocol_version: 'v1.0.0', scan_level: 'symbol' } }),
+      JSON.stringify({ progress: { message: 'Scanning your code and 12 packages across 3 dependent modules for known vulnerabilities...' } }),
+    ].join('\n'),
+    stderr: '',
+  };
+  const result = interpretGovulncheckResult(res);
+  assert.equal(result.ok, true);
+  assert.match(result.summary, /found no known vulnerabilities/i);
+});
+
+test('interpretGovulncheckResult names the tool and install command on a spawn error, distinct from an exit-status failure', () => {
+  const res = { error: { code: 'ENOENT', message: 'spawnSync govulncheck ENOENT' }, status: null, stdout: null, stderr: null };
+  const result = interpretGovulncheckResult(res);
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /could not be invoked/i);
+  assert.match(result.reason, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@latest/);
 });
 
 // --- Critical 3: per-probe coverage must be explicit, not array-emptiness --
