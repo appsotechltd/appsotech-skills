@@ -6,6 +6,22 @@ added. Run this **last, on finished code**, before presenting anything.
 Report what failed and what you changed. A gate that always passes silently is
 a gate nobody ran.
 
+## Run the scripts first
+
+```
+node "$CONTRAST" design/tokens.css      # tokens still compliant
+node "$AUDIT" <src-dir>                 # the code actually uses them
+```
+
+Between them these cover the checklist items marked **[auto]** below. Everything
+else needs a human pass — and those are not leftovers, they are the judgement
+calls: whether the tablet layout is designed or merely fits, whether dark mode
+was designed or inverted, whether the memorable element survived into the code.
+
+`$AUDIT` exits 1 on errors and 0 on warnings alone. `--warn-only` surveys
+without failing. A justified exception gets a `design-ok` comment on the line,
+which is a decision someone can review — deleting a rule is not.
+
 ## Anti-patterns — never ship these
 
 ### Visual
@@ -53,18 +69,13 @@ a gate nobody ran.
 
 ### Accessibility
 
-- [ ] Contrast ≥ 4.5:1 text, ≥ 3:1 UI — **verified by running the script, not
-      by eye**, in both light and dark
+- [ ] **[auto]** Contrast ≥ 4.5:1 text, ≥ 3:1 focus ring, both light and dark
 - [ ] Touch targets ≥ 44×44px at every breakpoint
-- [ ] All images have `alt`
-- [ ] All form fields have a `<label>`
-- [ ] Visible focus states on every interactive element
+- [ ] **[auto]** All images have `alt`
+- [ ] **[auto]** All form fields have a `<label>`, `aria-label` or `aria-labelledby`
+- [ ] **[auto]** Focus never removed without a replacement
 - [ ] No colour-only information
 - [ ] Reduced motion honoured (`prefers-reduced-motion` / `disableAnimations`)
-
-```
-node "$CONTRAST" design/tokens.css
-```
 
 ### Responsive
 
@@ -89,15 +100,15 @@ node "$CONTRAST" design/tokens.css
 
 - [ ] Clear typographic hierarchy, 3–5 levels
 - [ ] Consistent spacing from the token scale
-- [ ] Maximum 2–3 typefaces
+- [ ] **[auto]** Primary face is not Inter, Roboto or Arial · maximum 2–3 typefaces
 - [ ] Cohesive palette, 60-30-10
 - [ ] **One** memorable design element, and you can name it
 
 ### Technical
 
 - [ ] Mobile-first, not desktop-shrunk
-- [ ] Animations use only transform and opacity
-- [ ] No dynamic Tailwind class names
+- [ ] **[auto]** Animations use only transform and opacity
+- [ ] **[auto]** No dynamic Tailwind class names
 - [ ] `cn()` used for class merging
 - [ ] Dark mode via CSS variables / `ThemeData`, not per-component branches
 
@@ -112,7 +123,7 @@ node "$CONTRAST" design/tokens.css
 
 ### Consistency with the frozen system
 
-- [ ] Every colour traces to a token in `design/tokens.css`
+- [ ] **[auto]** Every colour traces to a token in `design/tokens.css`
 - [ ] Any deviation is recorded in `design/overrides.md`, with a reason
 - [ ] Nothing re-selected the style — `design/design-system.md` is unchanged
       unless the user explicitly asked for a restyle

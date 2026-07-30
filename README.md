@@ -39,6 +39,17 @@ patterns, the accessibility floor and the gate are vendored and identical in
 all three, so a chat session with no filesystem still produces a compliant,
 tokenised interface.
 
+Two scripts make the gate mechanical rather than aspirational.
+`scripts/audit-markup.mjs` reads the source and fails on colours declared
+outside `design/`, dynamic Tailwind classes, click handlers on non-interactive
+elements, images without `alt`, unlabelled inputs, banned display faces and
+focus removed with nothing put back. That is the one that catches drift — a
+component with a hardcoded `#3B82F6` passes a token check trivially, because
+the token check never sees the component. Precision is the design constraint:
+`hsl(var(--token))`, a labelled input, a `role`+`tabIndex`+key-handler div and
+Arial as a fallback are all explicitly exempt, because a linter that fires on
+correct code is one people learn to skip.
+
 `scripts/contrast.mjs` gates the palette at freeze time rather than at review.
 pro-max palettes are not contrast-safe — its own CRM palette pairs `#FFFFFF` on
 `#3B82F6` at 3.68:1, which passes the 3:1 UI threshold and fails body text. Low

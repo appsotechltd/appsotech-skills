@@ -95,21 +95,24 @@ The working directory during a run is the target project, so a bare
 start of the run, and use the variable everywhere after:
 
 ```bash
-for c in \
-  "$CLAUDE_PLUGIN_ROOT/skills/design-pipeline/scripts/contrast.mjs" \
-  "$HOME/.claude/skills/design-pipeline/scripts/contrast.mjs" \
-  ".claude/skills/design-pipeline/scripts/contrast.mjs"; do
-  [ -f "$c" ] && CONTRAST="$c" && break
+for base in \
+  "$CLAUDE_PLUGIN_ROOT/skills/design-pipeline/scripts" \
+  "$HOME/.claude/skills/design-pipeline/scripts" \
+  ".claude/skills/design-pipeline/scripts"; do
+  [ -f "$base/contrast.mjs" ] && SCRIPTS="$base" && break
 done
-echo "${CONTRAST:-NOT FOUND}"
+CONTRAST="$SCRIPTS/contrast.mjs"
+AUDIT="$SCRIPTS/audit-markup.mjs"
+echo "${SCRIPTS:-NOT FOUND}"
 ```
 
 `$CLAUDE_PLUGIN_ROOT` **is** correct here — this is our own plugin. It is only
 wrong when hunting for pro-max, which lives in a different plugin.
 
-Every `$CONTRAST` below means the path resolved above. If it did not resolve,
-say so and fall back to checking contrast by hand against the table in
-`references/design-tokens.md` — do not skip the check silently.
+`$CONTRAST` and `$AUDIT` below mean the paths resolved above. If they did not
+resolve, say so and fall back to checking by hand against
+`references/design-tokens.md` and `references/design-gate.md` — do not skip the
+checks silently.
 
 ---
 
@@ -194,12 +197,28 @@ anything else.
 
 ## Phase 5 — Gate
 
-Walk `references/design-gate.md` end to end **before presenting anything**. It
-is the last step on finished code, not a checklist to read at the start and
-remember.
+Two scripts, then the checklist. Run them **before presenting anything**.
 
-Re-run the contrast script as a backstop — a component may have introduced a
-colour the tokens never had.
+```
+node "$CONTRAST" design/tokens.css      # the tokens are still compliant
+node "$AUDIT" <src-dir>                 # the code actually uses them
+```
+
+The second is the one that catches drift. `contrast.mjs` validates the token
+file; a component with a hardcoded `#3B82F6` passes it trivially, because the
+check never sees the component. `audit-markup.mjs` reads the source and fails
+on colours outside `design/`, dynamic Tailwind classes, click handlers on
+non-interactive elements, images without `alt`, unlabelled inputs, banned
+display faces and focus removed with nothing put back.
+
+It exits 1 on errors, 0 on warnings alone. Use `--warn-only` to survey an
+existing codebase without failing, and suppress a genuinely-justified line with
+a `design-ok` comment rather than deleting the rule.
+
+Then walk `references/design-gate.md` end to end. It is the last step on
+finished code, not a checklist to read at the start and remember — and the
+items the scripts cannot check (tablet layout, dark-mode design quality, dark
+patterns, the memorable element) are exactly the ones that need a human pass.
 
 Report what failed and what you changed. A gate that always passes silently is
 a gate nobody ran.
