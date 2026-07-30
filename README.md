@@ -10,12 +10,12 @@ Skills for Claude Code, published by Appsotech Limited.
 
 ## Install by copying
 
-    cp -r plugins/audit/skills/13-app-audit ~/.claude/skills/
+    cp -r plugins/audit/skills/appsotech-audit ~/.claude/skills/
     cp -r plugins/build/skills/appsotech-stack ~/.claude/skills/
 
 On Windows (PowerShell):
 
-    Copy-Item -Recurse plugins\audit\skills\13-app-audit $HOME\.claude\skills\
+    Copy-Item -Recurse plugins\audit\skills\appsotech-audit $HOME\.claude\skills\
     Copy-Item -Recurse plugins\build\skills\appsotech-stack $HOME\.claude\skills\
 
 ## Skills
@@ -111,7 +111,7 @@ doing on-demand TLS would have to own `:443`, which Traefik already does.
 
 [promax]: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
 
-### `13-app-audit`
+### `appsotech-audit`
 
 Runs the [13-Layer App Audit](13-app-audit/app-audit.md) against a codebase.
 101 probes across 13 layers, scored 0–4 from collected evidence, weighted to a
@@ -136,7 +136,7 @@ folders under its own `skills/`:
     plugins/<theme>/.claude-plugin/plugin.json
     plugins/<theme>/skills/<skill-name>/SKILL.md
 
-There are two themes today: `plugins/audit/` holds `13-app-audit`, and
+There are two themes today: `plugins/audit/` holds `appsotech-audit`, and
 `plugins/build/` holds `appsotech-stack`. A second skill in either theme sits
 alongside the first as `plugins/<theme>/skills/<new-skill>/`, sharing that
 plugin's version.
@@ -154,7 +154,7 @@ plugin's version.
 Issues and pull requests welcome. Skills live under `plugins/<plugin>/skills/`.
 Run tests with:
 
-    node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs
+    node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs
     node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
 
 Requires **Node 22 or later** — the code uses `import.meta.dirname` and the

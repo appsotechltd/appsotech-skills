@@ -1,5 +1,5 @@
 ---
-name: 13-app-audit
+name: appsotech-audit
 description: >
   Audit a software stack across 13 architectural layers — frontend, API,
   database, auth, hosting, cloud, CI/CD, security/RLS, rate limiting,
@@ -34,9 +34,9 @@ the scripts once instead, and stay where the auditor is:
 
 ```bash
 for base in \
-  "$CLAUDE_PLUGIN_ROOT/skills/13-app-audit/scripts" \
-  "$HOME/.claude/skills/13-app-audit/scripts" \
-  ".claude/skills/13-app-audit/scripts"; do
+  "$CLAUDE_PLUGIN_ROOT/skills/appsotech-audit/scripts" \
+  "$HOME/.claude/skills/appsotech-audit/scripts" \
+  ".claude/skills/appsotech-audit/scripts"; do
   [ -f "$base/score.mjs" ] && SCRIPTS="$base" && break
 done
 echo "${SCRIPTS:-NOT FOUND}"
@@ -369,7 +369,7 @@ audit/<date>/
   PowerShell, set `MSYS_NO_PATHCONV=1`, or double the leading slash.
 - **`node --test <directory>` throws `MODULE_NOT_FOUND` on Node 24.** Always
   glob the files explicitly:
-  `node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs`.
+  `node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs`.
 - **Several tests shell out to real `npm` and `go` on PATH** — deliberate
   integration tests, no mocking. Only two of them actually require `go`
   specifically (measured by stripping it from PATH and re-running):
