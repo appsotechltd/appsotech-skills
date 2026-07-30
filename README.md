@@ -20,6 +20,34 @@ On Windows (PowerShell):
 
 ## Skills
 
+### `design-pipeline`
+
+Designs and builds UI against a **frozen, project-wide design system**. Two
+authorities that do not overlap: [`ui-ux-pro-max`][promax] generates style,
+palette and font pairing; the vendored `elite-frontend-ux` owns token
+architecture, the type and spacing scales, responsive behaviour, light/dark and
+the accessibility floor — and has the veto.
+
+The load-bearing rule is persistence. Cloud sessions start fresh, so if
+`design/design-system.md` exists it is **read, not regenerated**. Without that,
+the same repo gets a different palette every session and the product drifts.
+
+Selection degrades in three tiers — query the script, invoke the skill by name,
+or fall back to twelve curated directions in
+`references/style-directions.md`. Only *style breadth* degrades: tokens,
+patterns, the accessibility floor and the gate are vendored and identical in
+all three, so a chat session with no filesystem still produces a compliant,
+tokenised interface.
+
+`scripts/contrast.mjs` gates the palette at freeze time rather than at review.
+pro-max palettes are not contrast-safe — its own CRM palette pairs `#FFFFFF` on
+`#3B82F6` at 3.68:1, which passes the 3:1 UI threshold and fails body text. Low
+contrast *borders* are reported but never fail the run: WCAG 1.4.11 covers
+borders that identify a control, not decorative separators, and failing them
+would fail every mainstream design system on its first run.
+
+[promax]: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
+
 ### `appsotech-stack`
 
 Builds an application on the Appsotech house stack. The stack, the directory
@@ -99,6 +127,7 @@ Run tests with:
 
     node --test plugins/audit/skills/13-app-audit/tests/*.test.mjs
     node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
+    node --test plugins/build/skills/design-pipeline/tests/*.test.mjs
 
 Requires **Node 22 or later** — the code uses `import.meta.dirname` and the
 tests rely on `node --test`'s glob-argument support, neither of which exist

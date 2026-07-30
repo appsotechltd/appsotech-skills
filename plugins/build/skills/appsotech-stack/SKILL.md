@@ -197,7 +197,10 @@ For each feature, in order:
 4. **Go tests** — the service against a real database, the handler against its
    router. Table-driven.
 5. **API client and screens** — typed client in `src/services/`, TanStack Query
-   hooks, then the screens.
+   hooks, then the screens. Anything with a visual surface goes through the
+   **`design-pipeline`** skill: it owns style, tokens, responsive behaviour,
+   light/dark and the accessibility gate. This skill owns how the surface is
+   wired; that one owns how it looks.
 6. **Component tests** — Vitest + Testing Library. One Playwright spec for the
    workflow named in Phase 4.
 

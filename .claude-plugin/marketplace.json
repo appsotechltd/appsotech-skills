@@ -18,8 +18,8 @@
     {
       "name": "build",
       "source": "./plugins/build",
-      "description": "Build skills for the Appsotech house stack, starting with appsotech-stack: pick the surfaces from a checklist, get an allocated port block and database, a scaffolded Go API and web/mobile surfaces, and a Coolify deployment",
-      "version": "0.1.0",
+      "description": "Build skills for the Appsotech house stack: appsotech-stack scaffolds the surfaces, ports, database and Coolify deployment; design-pipeline freezes a project-wide design system and gates every UI on contrast, responsive behaviour and light/dark",
+      "version": "0.2.0",
       "author": { "name": "Appsotech Limited", "email": "appsotechltd@gmail.com" }
     }
   ]
