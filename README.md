@@ -37,15 +37,22 @@ Surfaces are the fixed set every product is assembled from:
 | `admin-web` | React + Vite — operator console across all tenants |
 | `mobile` | Flutter — learner mobile app |
 | `backend` | Go — the product API, same-origin at `/v1` |
-| `gateway` | Caddy — the single ingress owning every hostname |
+
+Alongside them, opted into per product: **Redis** for caching, rate limiting
+and pub/sub; **fasthttp websockets** for live chat; **LiveKit** for voice and
+video; **Cloudflare R2** for object storage; **Zoho SMTP** for transactional
+email.
 
 `scripts/scaffold.mjs` allocates the product's block of ten development ports
 and its own PostgreSQL database, then writes everything the conventions decide
 by themselves — manifests, TypeScript configs, Dockerfiles, the RFC 7807 error
 envelope, CORS and tenant middleware, health and readiness routes, and the
-Coolify compose stack. It never overwrites an existing file, so a second run
-over a product is safe. Domain code is not scaffolded: that is the feature
-phase, built one vertical slice at a time.
+Coolify compose stack with every surface routed. It never overwrites an
+existing file, so a second run over a product is safe. Domain code is not
+scaffolded: that is the feature phase, built one vertical slice at a time.
+
+There is no separate gateway. Coolify's Traefik is the only ingress — a proxy
+doing on-demand TLS would have to own `:443`, which Traefik already does.
 
 ### `13-app-audit`
 

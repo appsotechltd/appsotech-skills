@@ -20,21 +20,26 @@ import { surface } from './surfaces.mjs';
 // are keys in one shared configuration, not scoped per project. Prefixing
 // with the product slug is what stops two products' `web` routers from
 // silently overwriting each other.
-function routerName(slug, key) {
-  return `${slug}-${key}`.replace(/[^a-z0-9-]/g, '-');
+// The router is named after the SERVICE it routes to, not the surface key —
+// a router called `demo-backend` pointing at a container called `demo-api`
+// makes a Traefik dashboard read as two unrelated things.
+function routerName(serviceName) {
+  return serviceName.replace(/[^a-z0-9-]/g, '-');
 }
 
-function traefikLabels({ slug, key, host, port }) {
-  const r = routerName(slug, key);
+function traefikLabels({ serviceName, rule, priority, port }) {
+  const r = routerName(serviceName);
   return [
     'traefik.enable=true',
     'traefik.docker.network=coolify',
-    `traefik.http.routers.${r}.rule=Host(\`${host}\`)`,
+    `traefik.http.routers.${r}.rule=${rule}`,
+    `traefik.http.routers.${r}.priority=${priority}`,
     `traefik.http.routers.${r}.entrypoints=https`,
     `traefik.http.routers.${r}.tls=true`,
     `traefik.http.routers.${r}.tls.certresolver=letsencrypt`,
     `traefik.http.services.${r}.loadbalancer.server.port=${port}`,
-    `traefik.http.routers.${r}-http.rule=Host(\`${host}\`)`,
+    `traefik.http.routers.${r}-http.rule=${rule}`,
+    `traefik.http.routers.${r}-http.priority=${priority}`,
     `traefik.http.routers.${r}-http.entrypoints=http`,
     `traefik.http.routers.${r}-http.middlewares=redirect-to-https@file`,
   ];
@@ -51,17 +56,39 @@ export function containerPort(key, alloc) {
   return alloc.ports[key];
 }
 
-export function hostnameFor(key, { slug, rootDomain }) {
+// Escapes a domain for use inside a Traefik HostRegexp rule.
+function reEscape(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// The Traefik rule for each surface, and the priority that resolves overlaps.
+//
+// Three surfaces share the organisation host: tenant-web at `/`, webapp at
+// `/app`, the API at `/v1`. Traefik picks the highest-priority matching
+// router, and default priority is rule length — which happens to favour the
+// longer path rules here, but only by accident. Setting priority explicitly
+// is what stops a rename of a hostname silently reordering them and sending
+// every /v1 request to tenant-web.
+//
+// Tenant subdomains are created at runtime, so the organisation host is a
+// regex rather than a literal.
+export function ruleFor(key, { slug, rootDomain }) {
+  const tenantHost = `HostRegexp(\`^[a-z0-9][a-z0-9-]*\\.${reEscape(`${slug}.${rootDomain}`)}$\`)`;
+
   switch (key) {
     case 'platform-web':
-      return `${slug}.${rootDomain}`;
+      return { rule: `Host(\`${slug}.${rootDomain}\`)`, priority: 100 };
     case 'admin-web':
-      return `admin.${slug}.${rootDomain}`;
-    // tenant-web, webapp and the API all live on the organisation host, which
-    // is created at runtime and is not knowable here. They are routed by the
-    // gateway, not by a Traefik Host() rule, so they get no router of their
-    // own — publishing them under a fixed hostname would contradict the one
-    // origin per organisation rule.
+      return { rule: `Host(\`admin.${slug}.${rootDomain}\`)`, priority: 100 };
+    case 'backend':
+      return { rule: `${tenantHost} && PathPrefix(\`/v1\`)`, priority: 50 };
+    case 'webapp':
+      return { rule: `${tenantHost} && PathPrefix(\`/app\`)`, priority: 50 };
+    // Everything else on the organisation host is the organisation's own
+    // public site. Lowest priority, so it is the fallback rather than a
+    // competitor to the two path rules above.
+    case 'tenant-web':
+      return { rule: tenantHost, priority: 10 };
     default:
       return null;
   }
@@ -72,17 +99,47 @@ function indent(lines, spaces) {
   return lines.map((l) => `${pad}${l}`).join('\n');
 }
 
+// Redis sits beside the application rather than in the Postgres stack: it is
+// a cache and a message bus, so losing it must be survivable, while losing
+// Postgres is not. Keeping them separate makes that difference operational
+// rather than aspirational.
+function redisService(slug) {
+  return [
+    `${slug}-redis:`,
+    `  image: redis:7-alpine`,
+    `  container_name: ${slug}-redis`,
+    `  restart: unless-stopped`,
+    // maxmemory + an eviction policy, because a cache with neither is not a
+    // cache — it is a memory leak that eventually takes the box down. allkeys-lru
+    // is right for a read cache; if this Redis ever holds a queue or a lock,
+    // that data needs its own instance with noeviction.
+    `  command: >`,
+    `    redis-server`,
+    `    --maxmemory 256mb`,
+    `    --maxmemory-policy allkeys-lru`,
+    `    --appendonly no`,
+    `  networks:`,
+    `    - coolify`,
+    `  healthcheck:`,
+    `    test: ["CMD", "redis-cli", "ping"]`,
+    `    interval: 10s`,
+    `    timeout: 3s`,
+    `    retries: 5`,
+    `  # No ports: stanza. An unauthenticated Redis published on the host is`,
+    `  # remote code execution, not just a data leak.`,
+  ];
+}
+
 export function composeFile({ slug, alloc, rootDomain, dataRoot = `/data/${slug}` }) {
   const services = [];
 
   for (const key of alloc.surfaces) {
-    if (key === 'gateway') continue;
     const s = surface(key);
     if (s.kind === 'flutter') continue;
 
     const name = key === 'backend' ? `${slug}-api` : `${slug}-${key}`;
     const port = containerPort(key, alloc);
-    const host = hostnameFor(key, { slug, rootDomain });
+    const routing = ruleFor(key, { slug, rootDomain });
 
     const lines = [
       `${name}:`,
@@ -114,20 +171,18 @@ export function composeFile({ slug, alloc, rootDomain, dataRoot = `/data/${slug}
 
     lines.push(`  networks:`, `    - coolify`);
 
-    if (host) {
+    if (routing) {
       lines.push(`  labels:`);
-      for (const l of traefikLabels({ slug, key, host, port })) {
+      for (const l of traefikLabels({ serviceName: name, ...routing, port })) {
         lines.push(`    - ${l}`);
       }
-    } else {
-      lines.push(
-        `  # No Traefik router: this surface is served on an organisation`,
-        `  # hostname created at runtime, so the gateway routes it, not a`,
-        `  # fixed Host() rule here.`,
-      );
     }
 
     services.push(indent(lines, 2));
+  }
+
+  if (alloc.redis) {
+    services.push(indent(redisService(slug), 2));
   }
 
   return `# ${slug} — Coolify stack
@@ -149,24 +204,60 @@ ${services.join('\n\n')}
 `;
 }
 
-export function envExample({ slug, alloc, rootDomain }) {
-  return `# ${slug} — Coolify environment. One file per service under
+export function envExample({ slug, alloc, rootDomain, caps = {} }) {
+  const { storage = false, mail = false, realtime = [] } = caps;
+  let out = `# ${slug} — Coolify environment. One file per service under
 # /data/${slug}/env/, referenced by env_file in the compose file.
 #
 # Nothing here has a default. A default database URL points somewhere real and
 # a default signing secret is one an attacker also has.
 
 # --- backend.env ---
-DATABASE_URL=postgres://${slug}:CHANGE_ME@postgres:5432/${alloc.database}?sslmode=disable
+DATABASE_URL=postgres://${slug}:CHANGE_ME@${slug}-postgres:5432/${alloc.database}?sslmode=disable
 JWT_SECRET=
 ALLOWED_ORIGINS=https://${slug}.${rootDomain},https://admin.${slug}.${rootDomain}
+`;
 
+  if (alloc.redis) {
+    // Container name, not localhost: services reach each other across the
+    // coolify network by name.
+    out += `REDIS_URL=redis://${slug}-redis:6379/0\n`;
+  }
+  if (storage) {
+    out += `
+R2_ACCOUNT_ID=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_BUCKET=${slug}
+R2_PUBLIC_BASE=
+`;
+  }
+  if (mail) {
+    out += `
+SMTP_HOST=smtp.zoho.com
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=
+SMTP_FROM_NAME=${slug}
+`;
+  }
+  if (realtime.includes('video')) {
+    out += `
+LIVEKIT_HOST=
+LIVEKIT_API_KEY=
+LIVEKIT_API_SECRET=
+`;
+  }
+
+  out += `
 # --- platform-web.env / tenant-web.env ---
 APP_BASE_URL=https://${slug}.${rootDomain}
 
 # --- shared ---
 ROOT_DOMAIN=${rootDomain}
 `;
+  return out;
 }
 
 // Postgres is deliberately a separate stack from the application services. It

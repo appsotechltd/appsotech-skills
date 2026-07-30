@@ -5,7 +5,7 @@
 ## What is different about mobile
 
 **There is no same-origin trick.** Every web surface calls `/v1` relative
-because the gateway puts the API on the same origin. A packaged app has no
+because the ingress puts the API on the same origin. A packaged app has no
 origin, so it needs an absolute base URL — and that URL cannot be baked in at
 build time, because a build goes to a store and lives for months across
 environments.

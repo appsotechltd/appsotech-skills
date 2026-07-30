@@ -62,22 +62,66 @@ HTTPS. Without it, `http://` simply does not resolve to anything.
 
 ## Which surfaces get a router
 
-Only the ones with a hostname fixed at deploy time:
+All of them. Traefik is the only ingress — there is no separate gateway.
 
-| Surface | Router |
-|---|---|
-| `platform-web` | `<product>.<root>` |
-| `admin-web` | `admin.<product>.<root>` |
-| `tenant-web` | none |
-| `webapp` | none |
-| API | none |
+| Surface | Rule | Priority |
+|---|---|---|
+| `platform-web` | ``Host(`<product>.<root>`)`` | 100 |
+| `admin-web` | ``Host(`admin.<product>.<root>`)`` | 100 |
+| API | organisation host **&&** ``PathPrefix(`/v1`)`` | 50 |
+| `webapp` | organisation host **&&** ``PathPrefix(`/app`)`` | 50 |
+| `tenant-web` | organisation host | 10 |
 
-The last three live on an **organisation host**, created at runtime when a
-tenant is onboarded. There is no `Host()` rule that could cover them — a
-school's own domain is not knowable when the stack is written. The Caddy
-gateway resolves those per request. Giving them a fixed Traefik hostname would
-contradict the one-origin-per-organisation rule and put a second address on
-surfaces that are supposed to have exactly one.
+The organisation host is a **regex**, because tenant subdomains are created at
+runtime and no literal `Host()` rule can enumerate them:
+
+```
+HostRegexp(`^[a-z0-9][a-z0-9-]*\.acme\.example\.com$`)
+```
+
+Dots are escaped. Unescaped, `acme.example.com` also matches
+`acmeXexample.com`, which is a hostname someone else can register.
+
+This is **Traefik v3 syntax** — a bare Go regex. Traefik v2 used named-group
+syntax (`` HostRegexp(`{sub:[a-z0-9-]+}.acme.example.com`) ``) and silently
+fails to match if you feed it a v3 rule. Check which version the Coolify
+install runs before debugging a 404.
+
+**Priorities are set explicitly.** All three organisation-host routers match
+the same hostname, and Traefik's default priority is rule length — which
+happens to favour the longer path rules today, but only by accident. Rename a
+hostname and the ordering can flip, sending every `/v1` request to
+`tenant-web`. The explicit values make that impossible.
+
+## A tenant's own domain
+
+An organisation's own verified domain is not knowable at deploy time, so no
+compose label can cover it. Two options, and the choice is architectural:
+
+**Traefik dynamic configuration.** When a tenant verifies a domain, write a
+router into Traefik's file provider (or its API) and let its `certresolver`
+issue the certificate. This is the option that fits Coolify, and it is a small
+service, not a proxy.
+
+**A Caddy gateway with on-demand TLS.** Caddy issues per-domain certificates
+at first request, gated by an `ask` endpoint so pointing DNS at the box is not
+enough to get a certificate. It is genuinely less work than the above — but it
+must own `:443`, and **Coolify's Traefik already does**. Running both means one
+of them receives nothing. Only reach for this on a box Coolify does not manage.
+
+Whichever is chosen, a certificate for an arbitrary customer domain has to be
+issued per domain. Wildcards cannot cover other people's zones.
+
+## Wildcard certificates
+
+`*.<product>.<root>` needs a wildcard certificate, because tenant subdomains
+are created at runtime. **Wildcards are issued over DNS-01 only**, which needs
+a DNS-provider credential for the zone configured on Traefik's certresolver.
+
+The failure mode is a silent TLS handshake error at request time, not an error
+at deploy time. If tenant subdomains work locally and fail in production with
+nothing in the logs, this is why. Dropping the Caddy gateway does not avoid
+this — it is a property of ACME, not of the proxy.
 
 ## Environment
 
@@ -123,6 +167,22 @@ over the `coolify` network by container name.
 The password comes from a Docker secret rather than an environment variable, so
 it is not visible to `docker inspect` or to anything that can read the
 process's environment.
+
+## Redis
+
+In the application stack rather than the Postgres one: it is a cache and a
+message bus, so losing it must be survivable, while losing Postgres is not.
+Keeping them in separate stacks makes that difference operational rather than
+aspirational.
+
+Also no `ports:` stanza. An unauthenticated Redis published on a host port is
+remote code execution, not merely a data leak — `CONFIG SET dir` plus a write
+is a well-worn path to a shell.
+
+It runs with `--maxmemory 256mb --maxmemory-policy allkeys-lru`. Raise the
+memory before assuming a cache miss rate is a code problem. If this Redis ever
+holds a job queue or a lock, that data needs its **own instance** with
+`noeviction` — LRU will silently evict a queued job.
 
 ## Migrations
 

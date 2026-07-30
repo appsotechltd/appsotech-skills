@@ -42,7 +42,14 @@ test('only the webapp is served under a path prefix', () => {
   assert.match(surface('webapp').hostname, /\/app$/);
   assert.match(surface('backend').hostname, /\/v1$/);
   assert.equal(surface('mobile').hostname, null);
-  assert.equal(surface('gateway').hostname, null);
+});
+
+test('there is no gateway surface', () => {
+  // A Caddy gateway does on-demand TLS, which requires owning :443 — and
+  // Coolify's Traefik already owns it. Two public ingresses on one box either
+  // fight for the port or leave one of them receiving nothing.
+  assert.throws(() => surface('gateway'), /unknown surface/);
+  assert.ok(!SURFACE_KEYS.includes('gateway'));
 });
 
 test('surface() rejects an unknown key with the valid list', () => {

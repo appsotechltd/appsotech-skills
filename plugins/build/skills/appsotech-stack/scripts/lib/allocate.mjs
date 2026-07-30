@@ -103,15 +103,46 @@ export function nextApiPort(usedPorts = []) {
 // and puts webapp on 3x2 — otherwise adding tenant-web later would shift
 // every surface after it, and a port that moved is a port that is wrong in
 // some Dockerfile nobody thought to grep.
+export const REALTIME_MODES = ['chat', 'video'];
+
 export function allocate({
   slug,
   surfaces,
   used = {},
   dbPrefix = 'akadesk',
   dbName = null,
+  redis = null,
+  realtime = [],
 } = {}) {
   validateSlug(slug);
   const selected = normaliseSelection(surfaces);
+
+  for (const mode of realtime) {
+    if (!REALTIME_MODES.includes(mode)) {
+      throw new Error(
+        `unknown realtime mode "${mode}" — expected one of: ${REALTIME_MODES.join(', ')}`,
+      );
+    }
+  }
+  const hasBackend = selected.includes('backend');
+  if (realtime.length > 0 && !hasBackend) {
+    throw new Error(
+      'realtime needs `backend` — websocket hubs and LiveKit tokens are both ' +
+        'minted by the Go API, and neither can live in a static bundle',
+    );
+  }
+
+  // Redis follows the API by default: caching, and the pub/sub that lets a
+  // websocket message reach a client held open by a different replica.
+  // Chat forces it on — a multi-replica hub without a bus silently delivers
+  // messages to whichever replica happens to hold the sender.
+  const wantRedis = redis === null ? hasBackend : Boolean(redis);
+  if (realtime.includes('chat') && !wantRedis) {
+    throw new Error(
+      'realtime chat requires redis — without a shared bus, a message reaches ' +
+        'only the clients connected to the same replica as the sender',
+    );
+  }
 
   const block = used.webBlock ?? nextWebBlock(used.webBlocks ?? []);
   const apiPort = selected.includes('backend')
@@ -132,7 +163,16 @@ export function allocate({
     );
   }
 
-  return { slug, surfaces: selected, block, ports, apiPort, database };
+  return {
+    slug,
+    surfaces: selected,
+    block,
+    ports,
+    apiPort,
+    database,
+    redis: wantRedis,
+    realtime: REALTIME_MODES.filter((m) => realtime.includes(m)),
+  };
 }
 
 // Where a port has to be changed in lockstep when it changes at all. The

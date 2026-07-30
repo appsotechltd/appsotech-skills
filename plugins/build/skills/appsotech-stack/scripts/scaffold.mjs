@@ -26,6 +26,7 @@ const VALUE_FLAGS = new Set([
   '--db-prefix',
   '--db-name',
   '--allocations',
+  '--realtime',
 ]);
 
 function flagValue(name) {
@@ -48,6 +49,7 @@ const surfacesArg = flagValue('--surfaces');
 if (!slug || !surfacesArg) {
   console.error(
     'usage: scaffold.mjs <slug> --surfaces a,b,c [--out DIR] [--root-domain D]\n' +
+      '       [--realtime chat,video] [--no-redis] [--storage] [--mail]\n' +
       `       surfaces: ${SURFACE_KEYS.join(', ')}`,
   );
   process.exit(2);
@@ -58,6 +60,15 @@ const rootDomain = flagValue('--root-domain') ?? 'akadesk.com';
 const dbPrefix = flagValue('--db-prefix') ?? 'akadesk';
 const dbName = flagValue('--db-name');
 const dryRun = args.includes('--dry-run');
+const realtime = (flagValue('--realtime') ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+// Redis follows the API unless explicitly declined. `--no-redis` wins over
+// `--redis` so an explicit opt-out is never overridden by a default.
+const redis = args.includes('--no-redis') ? false : args.includes('--redis') ? true : null;
+const storage = args.includes('--storage');
+const mail = args.includes('--mail');
 
 let selected;
 try {
@@ -81,9 +92,21 @@ if (allocationsPath) {
 
 let alloc;
 try {
-  alloc = allocate({ slug, surfaces: selected, used, dbPrefix, dbName });
+  alloc = allocate({ slug, surfaces: selected, used, dbPrefix, dbName, redis, realtime });
 } catch (err) {
   console.error(String(err.message));
+  process.exit(2);
+}
+// Storage and mail are API-side concerns; asking for them without a backend
+// is a selection mistake rather than a thing to silently drop.
+const caps = {
+  redis: alloc.redis,
+  realtime: alloc.realtime,
+  storage,
+  mail,
+};
+if ((storage || mail) && !alloc.surfaces.includes('backend')) {
+  console.error('--storage and --mail need `backend`: both are API-side, and R2 keys and SMTP credentials cannot live in a browser bundle');
   process.exit(2);
 }
 
@@ -108,9 +131,21 @@ for (const key of alloc.surfaces) {
 
   if (s.kind === 'go') {
     const p = alloc.apiPort;
-    write(`${dir}/go.mod`, t.goMod(slug));
-    write(`${dir}/cmd/api/main.go`, t.goMain(slug, p));
-    write(`${dir}/internal/config/config.go`, t.goConfig(slug, p));
+    write(`${dir}/go.mod`, t.goMod(slug, caps));
+    write(`${dir}/cmd/api/main.go`, t.goMain(slug, p, caps));
+    write(`${dir}/internal/config/config.go`, t.goConfig(slug, p, caps));
+    if (caps.redis) {
+      write(`${dir}/internal/cache/cache.go`, t.goCache(slug));
+      write(`${dir}/internal/cache/ratelimit.go`, t.goRateLimit(slug));
+    }
+    if (caps.storage) write(`${dir}/internal/storage/storage.go`, t.goStorage(slug));
+    if (caps.mail) write(`${dir}/internal/mail/mail.go`, t.goMailer(slug));
+    if (caps.realtime.includes('chat')) {
+      write(`${dir}/internal/realtime/hub.go`, t.goRealtimeChat(slug));
+    }
+    if (caps.realtime.includes('video')) {
+      write(`${dir}/internal/realtime/livekit.go`, t.goRealtimeVideo(slug));
+    }
     write(`${dir}/internal/db/db.go`, t.goDB(slug));
     write(`${dir}/internal/problems/problems.go`, t.goProblems(slug));
     write(`${dir}/internal/response/response.go`, t.goResponse(slug));
@@ -118,7 +153,7 @@ for (const key of alloc.surfaces) {
     write(`${dir}/internal/middleware/tenant.go`, t.goTenantMiddleware(slug));
     write(`${dir}/Dockerfile`, t.goDockerfile(slug, p));
     write(`${dir}/.air.toml`, t.goAirToml(p));
-    write(`${dir}/.env.example`, t.goEnvExample(slug, p, alloc.database));
+    write(`${dir}/.env.example`, t.goEnvExample(slug, p, alloc.database, caps));
     write(
       `${dir}/migrations/.gitkeep`,
       '# Numbered pairs: 000001_name.up.sql and 000001_name.down.sql.\n',
@@ -166,13 +201,11 @@ for (const key of alloc.surfaces) {
 }
 
 // Deployment is scaffolded whenever there is anything to deploy.
-const deployable = alloc.surfaces.filter(
-  (k) => !['gateway', 'mobile'].includes(k),
-);
+const deployable = alloc.surfaces.filter((k) => k !== 'mobile');
 if (deployable.length > 0) {
   write(`deploy/${slug}.compose.yml`, composeFile({ slug, alloc, rootDomain }));
   write(`deploy/postgres.compose.yml`, postgresCompose({ slug, alloc }));
-  write(`deploy/.env.example`, envExample({ slug, alloc, rootDomain }));
+  write(`deploy/.env.example`, envExample({ slug, alloc, rootDomain, caps }));
 }
 
 write('.gitignore', t.gitignore());
@@ -183,6 +216,13 @@ write('README.md', t.readme(slug, alloc));
 console.log(`product   ${slug}`);
 console.log(`database  ${alloc.database}`);
 console.log(`block     ${alloc.block}`);
+const enabled = [
+  alloc.redis ? 'redis' : null,
+  caps.storage ? 'r2' : null,
+  caps.mail ? 'zoho-smtp' : null,
+  ...alloc.realtime.map((m) => (m === 'video' ? 'livekit' : 'websocket-chat')),
+].filter(Boolean);
+console.log(`services  ${enabled.length ? enabled.join(', ') : 'none'}`);
 for (const key of alloc.surfaces) {
   const port = key === 'backend' ? alloc.apiPort : alloc.ports[key];
   console.log(`  ${key.padEnd(14)} ${port ?? '—'}`);

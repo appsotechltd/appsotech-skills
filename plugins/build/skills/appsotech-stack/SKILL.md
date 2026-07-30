@@ -3,7 +3,8 @@ name: appsotech-stack
 description: >
   Build an application on the Appsotech house stack — Go API (fasthttp,
   pgx/v5), Next.js public surfaces, React + Vite surfaces behind auth,
-  Flutter mobile, PostgreSQL, Caddy gateway, Coolify deploy. Use when asked
+  Flutter mobile, PostgreSQL, Redis, R2 storage, Zoho SMTP, LiveKit calls,
+  websocket chat, Coolify deploy. Use when asked
   to build, scaffold, start or add an app, product, service, portal, admin
   console, dashboard, API or mobile app; to add a feature or surface to an
   existing product; or to set up a new project. The stack, layout, ports and
@@ -23,8 +24,12 @@ to build* and *what the product does* — nothing else.
 | Public web | Next.js 15 App Router, TypeScript, Tailwind v4 |
 | Web behind auth | React 18 + Vite 5, TanStack Query, zustand, react-hook-form + zod, i18next, Sentry |
 | Mobile | Flutter 3.5 — dio, riverpod, go_router |
-| Ingress | Caddy — one gateway owning every hostname |
-| Deploy | Coolify — Docker Compose behind Traefik |
+| Cache / rate limit / bus | Redis 7 |
+| Live chat | fasthttp websocket + Redis pub/sub |
+| Live voice and video | LiveKit — the API mints tokens, media never proxies |
+| Object storage | Cloudflare R2, via the S3 API |
+| Transactional email | Zoho SMTP |
+| Deploy | Coolify — Docker Compose behind Traefik, the only ingress |
 | Tests | Go `testing`, Vitest + Testing Library, Playwright, `flutter_test` |
 
 If the operator asks for something outside this — a Rails API, a Vue frontend —
@@ -75,11 +80,26 @@ Question 2 — *Which services?*
 |---|---|
 | `backend` | Go API — fasthttp + pgx/v5, served same-origin at `/v1`. |
 | `mobile` | Flutter — learner mobile app. |
-| `gateway` | Caddy — the single ingress owning every hostname. Only for a new suite; an existing one already has one. |
-| `worker` | Go background worker sharing the API's module — jobs, notifications, scheduled work. |
+| `worker` | Go background worker sharing the API's module — jobs, scheduled work, and every outbound email. |
+| `storage` | Cloudflare R2 for uploads — presigned, so bytes never pass through the API. |
+
+Question 3 — *Which of these does it need?*
+
+| Option | Description to show |
+|---|---|
+| Live chat | Websocket messaging. Forces Redis on: without a shared bus, a message reaches only clients on the sender's replica. |
+| Live voice / video | LiveKit calls. The API mints short-lived join tokens; media goes direct. |
+| Transactional email | Zoho SMTP — signup, password reset, notifications. |
+| Redis caching | On by default whenever there is an API. Untick only for something genuinely trivial. |
 
 Recommend `backend` + `webapp` + `tenant-web` as the smallest coherent product
-and mark it so. Do not pre-select anything else.
+and mark it so. Do not pre-select anything in question 3 beyond Redis.
+
+There is deliberately **no gateway option**. Coolify's Traefik is the only
+ingress; a second proxy doing on-demand TLS would have to own `:443`, which
+Traefik already does. If someone asks for the Caddy gateway, explain that and
+point at `references/deploy-coolify.md` for how a tenant's own domain is
+routed instead.
 
 Then read `references/layout.md` and honour every warning the scaffolder emits
 about an incoherent selection — web surfaces without an API, `webapp` without
@@ -90,6 +110,7 @@ about an incoherent selection — web surfaces without an API, `webapp` without
 ```
 node scripts/scaffold.mjs <slug> --surfaces <comma,separated> \
   --out <targetDir> --root-domain <domain> \
+  [--realtime chat,video] [--storage] [--mail] [--no-redis] \
   [--allocations <path/to/ports-and-databases.md>]
 ```
 
@@ -114,9 +135,11 @@ cd <targetDir>/backend && go mod tidy && go build ./...
 cd <targetDir>/apps/<surface> && npm install && npm run build
 ```
 
-`go mod tidy` first, and on a fresh scaffold it must be a **no-op** — the
-generated `go.mod` declares only what the generated code imports. If it rewrites
-the file, something was added to a template without being imported.
+`go mod tidy` first — it has to run at all, because the scaffold ships no
+`go.sum`. It will populate the `// indirect` block, which is expected. What it
+must **not** do is change the direct `require` block: the generated `go.mod`
+declares exactly what the generated code imports. If a direct dependency
+disappears, a template declared something nothing imports.
 
 ## Phase 4 — Domain
 
@@ -142,8 +165,14 @@ generated from, and it is what a reviewer checks them against.
 ## Phase 5 — Build
 
 Read `references/backend-go.md`, then `references/web-surfaces.md`, then
-`references/feature-build.md`. Read `references/mobile-flutter.md` only if
-`mobile` was selected.
+`references/feature-build.md`. Read `references/services.md` if the product
+took any of caching, chat, calls, storage or email. Read
+`references/mobile-flutter.md` only if `mobile` was selected.
+
+One rule from `services.md` applies to every feature and is worth carrying in
+before you read it: **cache keys, websocket rooms, LiveKit room names and R2
+object keys are all namespaced by tenant.** None of them is a database row, so
+row-level security does not cover any of them.
 
 **Build vertically, one feature at a time — never layer by layer.** A feature
 is done when a real user action reaches Postgres and comes back. Finishing all
@@ -168,10 +197,9 @@ Then the next feature. Do not start one before the last is green.
 
 ## Phase 6 — Deploy
 
-Read `references/deploy-coolify.md`. Read `references/gateway-caddy.md` only if
-`gateway` was selected or the product introduces a new hostname.
+Read `references/deploy-coolify.md`.
 
-The two failure modes that produce no error message anywhere:
+The failure modes that produce no error message anywhere:
 
 - A service not joined to the **external `coolify` network** is unreachable.
   Traefik has nothing to route to; the container is healthy and the logs are
@@ -179,6 +207,12 @@ The two failure modes that produce no error message anywhere:
 - Traefik routes by **label**, never by `ports:`. Publishing a host port does
   not make a service reachable and does expose it beside TLS rather than
   behind it.
+- The organisation-host rule is `HostRegexp`, and **v2 and v3 syntax differ**.
+  A v3 rule on a v2 Traefik simply never matches. Check the version before
+  debugging a 404.
+- Wildcard certificates for `*.<product>.<root>` are issued over **DNS-01
+  only**. Without a DNS credential on the certresolver, tenant subdomains fail
+  at TLS handshake — at request time, not deploy time.
 
 ## Phase 7 — Verify
 

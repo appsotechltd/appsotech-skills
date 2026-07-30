@@ -173,16 +173,40 @@ test('traefik router names are prefixed with the product slug', () => {
   assert.match(compose, /routers\.demo-admin-web\.rule/);
 });
 
-test('runtime-hosted surfaces get no fixed Traefik router', () => {
+test('every routable surface actually gets a router', () => {
   const out = tmp();
-  run(['demo', '--surfaces', 'backend,tenant-web,webapp,platform-web', '--out', out]);
+  run(['demo', '--surfaces', 'backend,tenant-web,webapp,platform-web,admin-web', '--out', out]);
   const compose = readFileSync(join(out, 'deploy', 'demo.compose.yml'), 'utf8');
-  // tenant-web, webapp and the API live on organisation hosts created at
-  // runtime. A fixed Host() rule would contradict one-origin-per-organisation.
-  assert.doesNotMatch(compose, /routers\.demo-tenant-web\.rule/);
-  assert.doesNotMatch(compose, /routers\.demo-webapp\.rule/);
-  assert.doesNotMatch(compose, /routers\.demo-api\.rule/);
-  assert.match(compose, /routers\.demo-platform-web\.rule/);
+  // The original version left these three with no router at all, on the
+  // theory that a Caddy gateway would route them — while also generating no
+  // gateway service. All three were unreachable.
+  for (const r of ['platform-web', 'admin-web', 'tenant-web', 'webapp', 'api']) {
+    assert.match(compose, new RegExp(`routers\\.demo-${r}\\.rule`), `${r} has no router`);
+  }
+});
+
+test('the organisation host is a regex, since tenants are made at runtime', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend,tenant-web,webapp', '--out', out,
+    '--root-domain', 'example.com']);
+  const compose = readFileSync(join(out, 'deploy', 'demo.compose.yml'), 'utf8');
+  // Dots escaped, or `demo.example.com` also matches `demoXexample.com`.
+  assert.match(compose, /HostRegexp\(`\^\[a-z0-9\]\[a-z0-9-\]\*\\\.demo\\\.example\\\.com\$`\)/);
+});
+
+test('path routers outrank the tenant-web catch-all on the same host', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend,tenant-web,webapp', '--out', out]);
+  const compose = readFileSync(join(out, 'deploy', 'demo.compose.yml'), 'utf8');
+  const priority = (r) =>
+    Number(compose.match(new RegExp(`routers\\.demo-${r}\\.priority=(\\d+)`))[1]);
+  // All three match the same hostname. Without explicit priorities Traefik
+  // falls back to rule length, so a hostname rename could silently send /v1
+  // to tenant-web.
+  assert.ok(priority('api') > priority('tenant-web'));
+  assert.ok(priority('webapp') > priority('tenant-web'));
+  assert.match(compose, /routers\.demo-api\.rule=.*PathPrefix\(`\/v1`\)/);
+  assert.match(compose, /routers\.demo-webapp\.rule=.*PathPrefix\(`\/app`\)/);
 });
 
 test('no application service publishes a host port', () => {
@@ -212,13 +236,143 @@ test('a Vite surface is routed on container port 80, not its dev port', () => {
   assert.match(compose, /services\.demo-admin-web\.loadbalancer\.server\.port=80/);
 });
 
-test('mobile and gateway are not given compose services', () => {
+test('mobile is scaffolded but never given a compose service', () => {
   const out = tmp();
-  run(['demo', '--surfaces', 'backend,mobile,gateway', '--out', out]);
+  run(['demo', '--surfaces', 'backend,mobile', '--out', out]);
   const compose = readFileSync(join(out, 'deploy', 'demo.compose.yml'), 'utf8');
   assert.doesNotMatch(compose, /demo-mobile:/);
-  assert.doesNotMatch(compose, /demo-gateway:/);
   assert.ok(existsSync(join(out, 'apps', 'mobile', 'pubspec.yaml')));
+});
+
+test('redis follows the API by default and can be declined', () => {
+  const withRedis = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', withRedis]);
+  assert.ok(existsSync(join(withRedis, 'backend', 'internal', 'cache', 'cache.go')));
+  assert.match(
+    readFileSync(join(withRedis, 'deploy', 'demo.compose.yml'), 'utf8'), /demo-redis:/);
+
+  const without = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', without, '--no-redis']);
+  assert.equal(existsSync(join(without, 'backend', 'internal', 'cache')), false);
+  assert.doesNotMatch(
+    readFileSync(join(without, 'deploy', 'demo.compose.yml'), 'utf8'), /demo-redis:/);
+});
+
+test('a surfaces-only product gets no redis', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'tenant-web,webapp', '--out', out]);
+  assert.doesNotMatch(
+    readFileSync(join(out, 'deploy', 'demo.compose.yml'), 'utf8'), /demo-redis:/);
+});
+
+test('redis is bounded and never published', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out]);
+  const compose = readFileSync(join(out, 'deploy', 'demo.compose.yml'), 'utf8');
+  // A cache with no maxmemory and no eviction policy is a memory leak that
+  // eventually takes the box down.
+  assert.match(compose, /--maxmemory 256mb/);
+  assert.match(compose, /--maxmemory-policy allkeys-lru/);
+  // An unauthenticated Redis on a public port is remote code execution.
+  assert.doesNotMatch(compose, /^\s+ports:/m);
+});
+
+test('chat scaffolds a websocket hub and forces redis on', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--realtime', 'chat']);
+  const hub = readFileSync(join(out, 'backend', 'internal', 'realtime', 'hub.go'), 'utf8');
+  // fasthttp's upgrader, not gorilla — mixing net/http upgrade paths into a
+  // fasthttp server means running two servers.
+  assert.match(hub, /fasthttp\/websocket/);
+  // Delivery goes over the bus so a message reaches clients held by other
+  // replicas, which is the entire reason redis is mandatory here.
+  assert.match(hub, /Publish|PSubscribe/);
+  assert.ok(existsSync(join(out, 'backend', 'internal', 'cache', 'cache.go')));
+});
+
+test('chat without redis is refused rather than silently single-replica', () => {
+  const { status, stderr } = runExpectingFailure([
+    'demo', '--surfaces', 'backend', '--realtime', 'chat', '--no-redis',
+  ]);
+  assert.equal(status, 2);
+  assert.match(stderr, /requires redis/);
+});
+
+test('video scaffolds LiveKit token minting and no media path', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--realtime', 'video']);
+  const lk = readFileSync(join(out, 'backend', 'internal', 'realtime', 'livekit.go'), 'utf8');
+  assert.match(lk, /AccessToken/);
+  // Rooms are tenant-namespaced, or two organisations that both name a room
+  // "assembly" join the same call.
+  assert.match(lk, /func RoomName\(tenantID/);
+  const env = readFileSync(join(out, 'backend', '.env.example'), 'utf8');
+  assert.match(env, /LIVEKIT_API_SECRET/);
+});
+
+test('an unknown realtime mode is refused', () => {
+  const { status, stderr } = runExpectingFailure([
+    'demo', '--surfaces', 'backend', '--realtime', 'telepathy',
+  ]);
+  assert.equal(status, 2);
+  assert.match(stderr, /unknown realtime mode/);
+});
+
+test('R2 storage uses region auto and never sends an ACL', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--storage']);
+  const s = readFileSync(join(out, 'backend', 'internal', 'storage', 'storage.go'), 'utf8');
+  // R2 has no regions; any other value fails as a signature mismatch that
+  // reads like bad credentials.
+  assert.match(s, /Region: *"auto"/);
+  assert.match(s, /r2\.cloudflarestorage\.com/);
+  // R2 rejects ACL parameters outright.
+  assert.doesNotMatch(s, /ACL:/);
+  // Uploads are presigned so they never tie up a request worker.
+  assert.match(s, /PresignPut/);
+});
+
+test('Zoho mail uses STARTTLS on 587 and requires a From', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--mail']);
+  const m = readFileSync(join(out, 'backend', 'internal', 'mail', 'mail.go'), 'utf8');
+  assert.match(m, /StartTLS/);
+  const env = readFileSync(join(out, 'backend', '.env.example'), 'utf8');
+  assert.match(env, /SMTP_HOST=smtp\.zoho\.com/);
+  assert.match(env, /SMTP_PORT=587/);
+});
+
+test('storage and mail without a backend are refused', () => {
+  for (const flag of ['--storage', '--mail']) {
+    const { status, stderr } = runExpectingFailure(['demo', '--surfaces', 'webapp', flag]);
+    assert.equal(status, 2, flag);
+    assert.match(stderr, /need `backend`/, flag);
+  }
+});
+
+test('capabilities not asked for leave no trace', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--no-redis']);
+  for (const d of ['cache', 'storage', 'mail', 'realtime']) {
+    assert.equal(existsSync(join(out, 'backend', 'internal', d)), false, d);
+  }
+  const goMod = readFileSync(join(out, 'backend', 'go.mod'), 'utf8');
+  for (const dep of ['redis', 'aws-sdk', 'livekit', 'websocket']) {
+    assert.doesNotMatch(goMod, new RegExp(dep), `${dep} leaked into go.mod`);
+  }
+});
+
+test('each capability adds exactly its own dependencies', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out,
+    '--realtime', 'chat,video', '--storage', '--mail']);
+  const goMod = readFileSync(join(out, 'backend', 'go.mod'), 'utf8');
+  assert.match(goMod, /redis\/go-redis\/v9/);
+  assert.match(goMod, /fasthttp\/websocket/);
+  assert.match(goMod, /livekit\/protocol/);
+  assert.match(goMod, /aws-sdk-go-v2\/service\/s3/);
+  // mail is net/smtp from the standard library and must add nothing.
+  assert.doesNotMatch(goMod, /gomail|sendgrid|mailgun/);
 });
 
 test('an existing file is skipped rather than clobbered', () => {

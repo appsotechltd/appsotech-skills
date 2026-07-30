@@ -160,7 +160,6 @@ test('the Go API port location names SERVER_ADDR, not PORT alone', () => {
 test('port locations are surface-kind specific', () => {
   assert.match(portLocations('platform-web').join(' '), /package\.json/);
   assert.match(portLocations('webapp').join(' '), /vite\.config\.ts/);
-  // Flutter and the gateway have no per-product port at all.
+  // Flutter has no per-product port at all.
   assert.deepEqual(portLocations('mobile'), []);
-  assert.deepEqual(portLocations('gateway'), []);
 });

@@ -18,11 +18,9 @@ thing whichever product you are standing in.
 └── docs/               # domain.md, ports-and-databases.md
 ```
 
-A suite adds one more, owned by nobody in particular:
-
-```
-gateway/                # Caddy — the single ingress for every hostname
-```
+There is no `gateway/`. Coolify's Traefik is the only ingress — see
+`deploy-coolify.md` for how organisation hostnames are routed and why a second
+proxy cannot coexist with it.
 
 **Marketing sites are Next.js. Application surfaces are React + Vite.** Public
 pages need SSR and structured data for crawlers and link-preview bots; anything
@@ -37,14 +35,21 @@ backend/
 │   ├── worker/         # background jobs, if any
 │   └── seed/           # development data
 ├── internal/
+│   ├── cache/          # Redis: read-through cache, rate limiting
 │   ├── config/         # environment, read once at boot
 │   ├── db/             # pgxpool construction
+│   ├── mail/           # Zoho SMTP
 │   ├── middleware/     # logger, cors, auth, tenant, rbac
 │   ├── problems/       # RFC 7807 error types
+│   ├── realtime/       # websocket hub, LiveKit tokens
 │   ├── response/       # the {"data": ...} envelope
+│   ├── storage/        # Cloudflare R2
 │   └── <feature>/      # one package per domain concept
 └── migrations/         # 000001_name.up.sql / .down.sql
 ```
+
+`cache/`, `mail/`, `realtime/` and `storage/` are scaffolded only when the
+product asked for them — see `services.md`.
 
 `internal/` is one package per domain concept — `student`, `fees`, `timetable`,
 `assessment` — not one package per technical layer. A `handlers/` directory
@@ -96,9 +101,9 @@ Blocks run from 3200 upward. 3100 and API port 8100 belong to the suite site,
 which is not a product — it has no tenants of its own, so it can never be
 allocated to one. API ports run from 8080. Postgres keeps 5432, Redis 6379.
 
-These ports reach an app **directly**, bypassing the gateway. That is what they
+These ports reach an app **directly**, bypassing Traefik. That is what they
 are for: reaching one directly is how you tell "the app is broken" apart from
-"the gateway is routing it wrong". Normal use goes through the gateway by
+"the ingress is routing it wrong". Normal use goes through Traefik by
 hostname.
 
 ### Changing a port
@@ -118,7 +123,7 @@ parsed into config for parity with platforms that inject it, but
 default while every config file looks correct.
 
 A Vite surface's *container* port is always 80: the build is a static bundle
-served by nginx, and the gateway proxies to `:80` for every one of them. Its
+served by nginx, and Traefik proxies to `:80` for every one of them. Its
 allocated port is a development port only.
 
 ## Databases

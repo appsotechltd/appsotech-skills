@@ -81,17 +81,21 @@ export const SURFACES = [
     // build runs everywhere with no API URL baked into a bundle.
     rationale: 'same-origin under /v1, so no API URL is baked into any bundle',
   },
-  {
-    key: 'gateway',
-    dir: 'gateway',
-    label: 'gateway',
-    kind: 'caddy',
-    offset: null,
-    summary: 'Caddy — the single ingress that owns every hostname',
-    hostname: null,
-    rationale: 'products have no domains of their own; the gateway owns them all',
-  },
 ];
+
+// There is deliberately no `gateway` surface. A separate Caddy gateway exists
+// to do on-demand TLS for organisation-owned domains, and doing that requires
+// owning :443 — which Coolify's Traefik already owns. The two cannot both be
+// the public ingress on one box, so a scaffolded gateway would either never
+// receive traffic or fight Traefik for the port.
+//
+// Traefik routes every surface here instead; see references/deploy-coolify.md
+// for how a tenant's own domain is added, which is a dynamic-configuration
+// problem rather than a second proxy.
+//
+// academicos still runs a Caddy gateway. That is a suite fronting six products
+// on its own hosts, not a Coolify deployment, and this skill diverges from it
+// on purpose rather than by oversight.
 
 const BY_KEY = new Map(SURFACES.map((s) => [s.key, s]));
 

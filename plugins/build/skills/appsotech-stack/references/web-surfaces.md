@@ -23,7 +23,7 @@ runtime image copy a self-contained server instead of the whole `node_modules`
 tree.
 
 `tenant-web` reads the `Host` header to decide which organisation it is serving.
-The gateway passes it through intact for exactly this reason, so read it from
+Traefik passes it through intact for exactly this reason, so read it from
 `headers()` and never from a build-time environment variable — one build serves
 every tenant.
 
@@ -46,7 +46,7 @@ Static bundle, nginx, `:80` in every environment.
 
 **`base` matters.** `webapp` is served at `/app` on the organisation host, so
 its `vite.config.ts` sets `base: '/app/'`. A root-relative build works
-perfectly on the development port and 404s on every asset behind the gateway —
+perfectly on the development port and 404s on every asset once deployed —
 the failure appears only after deploy, which is why it is set at scaffold time.
 
 nginx needs the SPA fallback for the same reason: without `try_files`, a
@@ -56,7 +56,7 @@ refresh on any deep link is a 404 from nginx before React ever loads.
 
 `src/lib/api.ts`, `baseURL: '/v1'`, and **no host anywhere**.
 
-Every surface is served same-origin with its API under `/v1` — the gateway
+Every surface is served same-origin with its API under `/v1` — Traefik
 guarantees it in production, Vite's dev proxy mirrors it. So a relative path
 means one build runs in every environment and there is no API URL to get wrong
 at deploy time. Putting `VITE_API_URL` into a bundle undoes this: the value is
