@@ -226,8 +226,21 @@ comparing the rendered body under each scheme. Screenshots land in
 `design/responsive/` and are the artefact that makes a dark-mode review
 possible at all.
 
-It needs something to load: a dev server URL, a preview build, or the `.html`
-file directly for a single-file prototype. **Playwright is not bundled** — the
+It needs something to load. For a built surface, point it at the build output
+and it serves that itself:
+
+```
+node "$RESPONSIVE" --serve apps/webapp/dist --path /app
+node "$RESPONSIVE" prototype.html          # a single-file prototype
+node "$RESPONSIVE" http://localhost:3222   # an already-running dev server
+```
+
+`--serve` includes the SPA fallback, so deep links resolve the way they will
+behind nginx rather than 404ing. Point it at `dist/` or `out/`, not `src/` — it
+refuses a directory with no `index.html` rather than reporting a blank page as
+clean.
+
+**Playwright is not bundled** — the
 script resolves it from the project or a global install, and exits 3 with an
 explanation if absent rather than failing the build or passing silently. When
 that happens, say the responsive items were not verified.

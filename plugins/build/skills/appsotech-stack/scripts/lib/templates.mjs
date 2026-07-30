@@ -232,11 +232,24 @@ ${extraSetup}
 }
 
 export function goConfig(slug, apiPort, caps = {}) {
-  const { redis = false, realtime = [], storage = false, mail = false } = caps;
+  const {
+    redis = false, realtime = [], storage = false, mail = false, worker = false,
+  } = caps;
 
   const fields = [];
   const loads = [];
   const required = [];
+
+  if (worker) {
+    fields.push(
+      '\tJobClaimTimeout time.Duration',
+      '\tJobRetention    time.Duration',
+    );
+    loads.push(
+      '\t\tJobClaimTimeout: durationOr("JOB_CLAIM_TIMEOUT", 15*time.Minute),',
+      '\t\tJobRetention:    durationOr("JOB_RETENTION", 7*24*time.Hour),',
+    );
+  }
 
   if (redis) {
     fields.push('\tRedisURL       string');
@@ -309,7 +322,7 @@ export function goConfig(slug, apiPort, caps = {}) {
 import (
 	"errors"
 	"os"
-	"strings"
+	"strings"${worker ? '\n\t"time"' : ''}
 )
 
 // Config is the whole of this service's runtime configuration. Everything is
@@ -360,7 +373,22 @@ func envOr(key, fallback string) string {
 	}
 	return fallback
 }
-`;
+${worker ? `
+// durationOr parses a Go duration string ("30m", "24h") and falls back on an
+// unparseable one rather than silently using the zero value — a claim timeout
+// of 0 would reap every job the instant it started.
+func durationOr(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil || d <= 0 {
+		return fallback
+	}
+	return d
+}
+` : ''}`;
 }
 
 export function goDB(slug) {
@@ -1516,6 +1544,27 @@ WHERE id = $1\`, j.ID, fmt.Sprintf("%d seconds", int(backoff.Seconds())), cause.
 	return err
 }
 
+// Purge deletes COMPLETED jobs older than the retention window.
+//
+// Only status='done'. Dead jobs are kept indefinitely and deleted by hand
+// after someone has looked at them — they are the record of what broke, and a
+// queue that quietly discards its failures cannot answer why something never
+// happened.
+//
+// Without this the table grows for the life of the product. The partial claim
+// index keeps claiming fast regardless, so the symptom is not slow queries but
+// a table that dominates every backup and restore.
+func (q *Queue) Purge(ctx context.Context, olderThan time.Duration) (int64, error) {
+	tag, err := q.pool.Exec(ctx, \`
+DELETE FROM job_queue
+WHERE status = 'done' AND updated_at < now() - $1::interval\`,
+		fmt.Sprintf("%d seconds", int(olderThan.Seconds())))
+	if err != nil {
+		return 0, fmt.Errorf("purge: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // Reap returns jobs whose worker died mid-run.
 //
 // A process killed between Claim and Succeed leaves a row stuck in 'running'
@@ -1568,30 +1617,94 @@ type Handler func(ctx context.Context, tx pgx.Tx, payload json.RawMessage) error
 // when it is reaped. "Send the welcome email" run twice is two emails; "charge
 // the card" run twice is a chargeback. Make the effect keyed on something
 // stable, or check before acting.
+type registration struct {
+	handle  Handler
+	timeout time.Duration
+}
+
 type Runner struct {
 	queue    *Queue
 	pool     *pgxpool.Pool
 	workerID string
-	handlers map[string]Handler
+	handlers map[string]registration
 
-	// Must exceed the longest handler, or a slow job is reaped and ends up
-	// running twice at once.
-	claimTimeout time.Duration
-	pollInterval time.Duration
+	defaultTimeout time.Duration
+	pollInterval   time.Duration
+	retention      time.Duration
 }
 
-func NewRunner(pool *pgxpool.Pool, workerID string) *Runner {
-	return &Runner{
-		queue:        NewQueue(pool),
-		pool:         pool,
-		workerID:     workerID,
-		handlers:     make(map[string]Handler),
-		claimTimeout: 15 * time.Minute,
-		pollInterval: 2 * time.Second,
+// Options configures a Runner. Zero values fall back to the defaults below.
+type Options struct {
+	// The default per-job timeout, and the age at which the reaper decides a
+	// claimed job's worker has died. From JOB_CLAIM_TIMEOUT.
+	ClaimTimeout time.Duration
+	PollInterval time.Duration
+	// How long completed jobs are kept before Purge removes them. Dead jobs
+	// are never purged. From JOB_RETENTION.
+	Retention time.Duration
+}
+
+const (
+	DefaultClaimTimeout = 15 * time.Minute
+	DefaultPollInterval = 2 * time.Second
+	DefaultRetention    = 7 * 24 * time.Hour
+)
+
+func NewRunner(pool *pgxpool.Pool, workerID string, opts Options) *Runner {
+	r := &Runner{
+		queue:          NewQueue(pool),
+		pool:           pool,
+		workerID:       workerID,
+		handlers:       make(map[string]registration),
+		defaultTimeout: opts.ClaimTimeout,
+		pollInterval:   opts.PollInterval,
+		retention:      opts.Retention,
 	}
+	if r.defaultTimeout <= 0 {
+		r.defaultTimeout = DefaultClaimTimeout
+	}
+	if r.pollInterval <= 0 {
+		r.pollInterval = DefaultPollInterval
+	}
+	if r.retention <= 0 {
+		r.retention = DefaultRetention
+	}
+	return r
 }
 
-func (r *Runner) Register(kind string, h Handler) { r.handlers[kind] = h }
+func (r *Runner) Register(kind string, h Handler) {
+	r.RegisterWithTimeout(kind, r.defaultTimeout, h)
+}
+
+// RegisterWithTimeout registers a handler that needs longer than the default.
+//
+// Use it for anything slow — a large export, a bulk import, a video job.
+// Without it the reaper treats the job as abandoned partway through and
+// requeues it, so it ends up running twice AT THE SAME TIME as the original,
+// which is the one failure at-least-once delivery does not cover.
+func (r *Runner) RegisterWithTimeout(kind string, timeout time.Duration, h Handler) {
+	if timeout <= 0 {
+		timeout = r.defaultTimeout
+	}
+	r.handlers[kind] = registration{handle: h, timeout: timeout}
+}
+
+// reapAfter is the LONGEST registered timeout, not the default.
+//
+// The reaper cannot know which kind a stuck row belongs to without reading it,
+// so it has to be generous enough for the slowest handler in the process. Using
+// the default here would reap every long job mid-flight.
+func (r *Runner) reapAfter() time.Duration {
+	longest := r.defaultTimeout
+	for _, reg := range r.handlers {
+		if reg.timeout > longest {
+			longest = reg.timeout
+		}
+	}
+	// A margin so a job finishing exactly on its deadline is not racing the
+	// reaper for its own row.
+	return longest + time.Minute
+}
 
 // Run polls until the context is cancelled, then returns. The caller's
 // shutdown must wait for it: returning mid-job leaves a row in 'running' that
@@ -1599,6 +1712,10 @@ func (r *Runner) Register(kind string, h Handler) { r.handlers[kind] = h }
 func (r *Runner) Run(ctx context.Context) {
 	reap := time.NewTicker(time.Minute)
 	defer reap.Stop()
+	// Hourly, not per-poll: retention is housekeeping, and a DELETE competing
+	// with every claim is a lock nobody asked for.
+	purge := time.NewTicker(time.Hour)
+	defer purge.Stop()
 
 	for {
 		select {
@@ -1606,10 +1723,16 @@ func (r *Runner) Run(ctx context.Context) {
 			log.Info().Msg("worker stopping")
 			return
 		case <-reap.C:
-			if n, err := r.queue.Reap(ctx, r.claimTimeout); err != nil {
+			if n, err := r.queue.Reap(ctx, r.reapAfter()); err != nil {
 				log.Error().Err(err).Msg("reap failed")
 			} else if n > 0 {
 				log.Warn().Int64("jobs", n).Msg("requeued jobs from dead workers")
+			}
+		case <-purge.C:
+			if n, err := r.queue.Purge(ctx, r.retention); err != nil {
+				log.Error().Err(err).Msg("purge failed")
+			} else if n > 0 {
+				log.Info().Int64("jobs", n).Msg("purged completed jobs")
 			}
 		default:
 		}
@@ -1631,7 +1754,8 @@ func (r *Runner) Run(ctx context.Context) {
 func (r *Runner) run(ctx context.Context, job *Job) {
 	l := log.With().Int64("job", job.ID).Str("kind", job.Kind).Int("attempt", job.Attempts).Logger()
 
-	handler, ok := r.handlers[job.Kind]
+	reg, ok := r.handlers[job.Kind]
+	handler := reg.handle
 	if !ok {
 		// An unregistered kind is a deploy skew — a job enqueued by a newer API
 		// than this worker. Failing it lets backoff carry it until the worker
@@ -1641,7 +1765,9 @@ func (r *Runner) run(ctx context.Context, job *Job) {
 		return
 	}
 
-	jobCtx, cancel := context.WithTimeout(ctx, r.claimTimeout)
+	// The handler's own timeout, not the reaper's — a fast kind should not
+	// inherit the slowest one's budget.
+	jobCtx, cancel := context.WithTimeout(ctx, reg.timeout)
 	defer cancel()
 
 	var err error
@@ -1804,10 +1930,20 @@ func main() {
 	if workerID == "" {
 		workerID = "worker"
 	}
-	runner := jobs.NewRunner(pool, workerID)
+	runner := jobs.NewRunner(pool, workerID, jobs.Options{
+		ClaimTimeout: cfg.JobClaimTimeout,
+		Retention:    cfg.JobRetention,
+	})
 ${mailSetup}
 	// Register the rest of this product's job kinds here. Every handler must
 	// be idempotent — delivery is at-least-once.
+	//
+	// A handler that can run longer than JOB_CLAIM_TIMEOUT must say so:
+	//
+	//   runner.RegisterWithTimeout("report.export", time.Hour, exportReport)
+	//
+	// Otherwise the reaper decides it was abandoned and requeues it while the
+	// original is still running.
 
 	log.Info().Str("worker", workerID).Msg("worker started")
 
@@ -1858,6 +1994,12 @@ CREATE INDEX IF NOT EXISTS job_queue_reap_idx
   ON job_queue (claimed_at)
   WHERE status = 'running';
 
+-- Retention. Without this the hourly purge sequentially scans a table that
+-- only ever grows, so the sweep gets slower exactly as it matters more.
+CREATE INDEX IF NOT EXISTS job_queue_purge_idx
+  ON job_queue (updated_at)
+  WHERE status = 'done';
+
 -- DELIBERATELY NO ROW LEVEL SECURITY ON THIS TABLE.
 --
 -- Every other table gets a tenant isolation policy. This one must not: the
@@ -1874,7 +2016,8 @@ CREATE INDEX IF NOT EXISTS job_queue_reap_idx
 }
 
 export function jobQueueMigrationDown() {
-  return `DROP INDEX IF EXISTS job_queue_reap_idx;
+  return `DROP INDEX IF EXISTS job_queue_purge_idx;
+DROP INDEX IF EXISTS job_queue_reap_idx;
 DROP INDEX IF EXISTS job_queue_tenant_idx;
 DROP INDEX IF EXISTS job_queue_claim_idx;
 DROP TABLE IF EXISTS job_queue;
@@ -1948,7 +2091,9 @@ tmp_dir = "tmp"
 }
 
 export function goEnvExample(slug, apiPort, database, caps = {}) {
-  const { redis = false, realtime = [], storage = false, mail = false } = caps;
+  const {
+    redis = false, realtime = [], storage = false, mail = false, worker = false,
+  } = caps;
   let out = `# Copy to .env and fill in. Never commit the filled copy.
 SERVER_ADDR=:${apiPort}
 PORT=${apiPort}
@@ -1967,6 +2112,19 @@ ALLOWED_ORIGINS=http://localhost:3000
     out += `
 # Cache, and where chat is enabled the pub/sub bus between replicas.
 REDIS_URL=redis://localhost:6379/0
+`;
+  }
+  if (worker) {
+    out += `
+# How long a claimed job may run before the reaper assumes its worker died.
+# It must exceed the SLOWEST handler — a job reaped mid-flight is requeued and
+# then runs twice at the same time. A single slow kind should use
+# RegisterWithTimeout rather than raising this for everything.
+JOB_CLAIM_TIMEOUT=15m
+
+# How long COMPLETED jobs are kept. Dead jobs are never purged — they are the
+# record of what broke.
+JOB_RETENTION=168h
 `;
   }
   if (storage) {

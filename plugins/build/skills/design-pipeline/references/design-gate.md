@@ -11,8 +11,12 @@ a gate nobody ran.
 ```
 node "$CONTRAST" design/tokens.css      # tokens still compliant
 node "$AUDIT" <src-dir>                 # the code actually uses them
-node "$RESPONSIVE" <url-or-file>        # it holds up in a real browser
+node "$RESPONSIVE" --serve <build-dir>  # it holds up in a real browser
 ```
+
+`--serve` runs a static server with the SPA fallback over a build directory, so
+a built surface is one command. A single-file prototype or a running dev server
+can be passed directly instead.
 
 Between them these cover the checklist items marked **[auto]** below. Everything
 else needs a human pass — and those are not leftovers, they are the judgement

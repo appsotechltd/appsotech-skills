@@ -77,10 +77,33 @@ chargeback. Key the effect on something stable, or check before acting.
 
 A process killed between claim and completion leaves a row stuck in `running`
 forever — nothing picks it up again, because the claim only looks at `pending`.
-The reaper requeues those after `claimTimeout`.
+The reaper requeues those.
 
-That timeout **must exceed the longest handler**. Set it too low and a slow job
-is reaped while still running, and then runs twice concurrently.
+The window is `JOB_CLAIM_TIMEOUT` (default 15m) and it **must exceed the
+longest handler**. Set it too low and a slow job is reaped while still running,
+then runs twice *concurrently* — the one failure at-least-once delivery does
+not cover, because both copies are live at the same moment.
+
+Rather than raising it for everything to suit one slow kind, declare that kind:
+
+```go
+runner.RegisterWithTimeout("report.export", time.Hour, exportReport)
+```
+
+The reaper uses the **longest registered timeout** plus a minute of margin, so
+one long handler cannot be reaped by a default sized for the others, and a fast
+kind still gets a tight per-job budget.
+
+### Retention
+
+Completed jobs are purged hourly once older than `JOB_RETENTION` (default 7
+days). Without it the table grows for the life of the product — and because the
+partial claim index keeps claiming fast regardless, the symptom is not slow
+queries but a table that dominates every backup and restore.
+
+**Only `done` rows are purged.** Dead jobs stay until someone has looked at
+them; they are the record of what broke, and deleting them makes "why did that
+notification never arrive" unanswerable.
 
 ### Tenancy
 

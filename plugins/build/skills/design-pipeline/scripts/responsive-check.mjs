@@ -14,9 +14,10 @@
 // message when it is absent — the same three-tier posture the design engine
 // uses.
 
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, resolve, isAbsolute } from 'node:path';
+import { createServer } from 'node:http';
+import { join, resolve, isAbsolute, extname, normalize } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const VIEWPORTS = [
@@ -55,6 +56,71 @@ export function playwrightCandidates(projectDir = '.') {
 
 export function resolvePlaywright(projectDir = '.') {
   return playwrightCandidates(projectDir).find((p) => existsSync(p)) ?? null;
+}
+
+// A built Vite or Next export is a directory of files with a client-side
+// router, and file:// breaks both absolute asset paths and any deep link. This
+// serves it over http so a check on a real build is one command instead of
+// "start a server in another terminal, then run this".
+export const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+// Resolves a request path inside root, refusing anything that escapes it.
+// `..` in a URL is the oldest static-server bug there is, and this server is
+// pointed at a build directory on someone's machine.
+export function safeJoin(root, urlPath) {
+  const decoded = decodeURIComponent(urlPath.split('?')[0]);
+  // A trailing slash survives normalize(), so "/" resolves to "<root>/" and
+  // compares unequal to the root itself. Stripping it keeps the return value
+  // canonical and the containment check a plain string comparison.
+  const full = normalize(join(root, decoded)).replace(/\/+$/, '') || '/';
+  const base = resolve(root).replace(/\/+$/, '') || '/';
+  // The `base + '/'` prefix matters: a sibling named `<base>-evil` starts with
+  // base as a string but is not inside it.
+  return full === base || full.startsWith(base + '/') ? full : null;
+}
+
+export function serveDir(root) {
+  const server = createServer((req, res) => {
+    const target = safeJoin(root, req.url ?? '/');
+    if (!target) {
+      res.writeHead(403).end('forbidden');
+      return;
+    }
+    let file = target;
+    if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
+    // SPA fallback: a client-side router owns deep links, so a miss serves
+    // index.html rather than 404 — the same rule the nginx config uses.
+    if (!existsSync(file)) file = join(resolve(root), 'index.html');
+    if (!existsSync(file)) {
+      res.writeHead(404).end('not found');
+      return;
+    }
+    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+    res.end(readFileSync(file));
+  });
+  return new Promise((ok, fail) => {
+    server.on('error', fail);
+    // Port 0 lets the OS pick a free one, so concurrent runs cannot collide.
+    server.listen(0, '127.0.0.1', () => ok({
+      url: `http://127.0.0.1:${server.address().port}`,
+      close: () => new Promise((done) => server.close(done)),
+    }));
+  });
 }
 
 export function targetUrl(target) {
@@ -259,20 +325,20 @@ if (isMain) {
     const v = args[i + 1];
     return v && !v.startsWith('--') ? v : fallback;
   };
-  const target = args.find((a) => !a.startsWith('--') && a !== flag('--widths', null) && a !== flag('--out', null));
+  const serveRoot = flag('--serve', null);
+  const routePath = flag('--path', '/');
+  const consumed = new Set([flag('--widths', null), flag('--out', null), serveRoot, flag('--path', null)]);
+  const target = args.find((a) => !a.startsWith('--') && !consumed.has(a));
 
-  if (!target) {
+  if (!target && !serveRoot) {
     console.error('usage: responsive-check.mjs <url-or-html-file> [--widths 320,768,1280]');
+    console.error('       responsive-check.mjs --serve <build-dir> [--path /route]');
     console.error('       [--out design/responsive] [--json] [--no-shots]');
     process.exit(2);
   }
 
-  const url = targetUrl(target);
-  if (!url) {
-    console.error(`no such file, and not a URL: ${target}`);
-    process.exit(2);
-  }
-
+  // Checked before anything is started. Without a browser there is nothing to
+  // serve a page to, and binding a port only to exit is noise.
   const pwPath = resolvePlaywright('.');
   if (!pwPath) {
     // Degrade the way the design engine does: say what is missing and why the
@@ -282,6 +348,31 @@ if (isMain) {
         'Install it in the project (`npm i -D playwright`) or globally, then re-run.\n' +
         'Until then these gate items must be checked by hand at 320, 768 and 1280px.');
     process.exit(3);
+  }
+
+  let server = null;
+  let url;
+  if (serveRoot) {
+    if (!existsSync(serveRoot) || !statSync(serveRoot).isDirectory()) {
+      console.error(`--serve: not a directory: ${serveRoot}`);
+      process.exit(2);
+    }
+    if (!existsSync(join(serveRoot, 'index.html'))) {
+      // Pointing at src/ instead of dist/ otherwise reports a blank page as
+      // clean, which is the most convincing possible false pass.
+      console.error(
+        `--serve: no index.html in ${serveRoot} — point this at the BUILD output ` +
+          '(dist/, out/) rather than the source directory.');
+      process.exit(2);
+    }
+    server = await serveDir(serveRoot);
+    url = server.url + (routePath.startsWith('/') ? routePath : `/${routePath}`);
+  } else {
+    url = targetUrl(target);
+    if (!url) {
+      console.error(`no such file, and not a URL: ${target}`);
+      process.exit(2);
+    }
   }
 
   const widths = flag('--widths', null)
@@ -329,6 +420,7 @@ if (isMain) {
     }
   } finally {
     await browser.close();
+    if (server) await server.close();
   }
 
   const summary = summarise(results);

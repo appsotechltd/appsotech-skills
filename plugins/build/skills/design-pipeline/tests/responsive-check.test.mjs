@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import {
   VIEWPORTS, TAP_MIN, IOS_ZOOM_FLOOR,
   resolvePlaywright, playwrightCandidates, targetUrl,
-  summarise, darkModeFinding,
+  summarise, darkModeFinding, safeJoin, serveDir, MIME,
 } from '../scripts/responsive-check.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'scripts', 'responsive-check.mjs');
@@ -157,6 +157,81 @@ test('a nonsense width exits 2 rather than launching a browser', () => {
   assert.match(r.stderr, /comma-separated pixel numbers/);
 });
 
+// --- the static server ------------------------------------------------------
+
+test('safeJoin refuses anything that escapes the root', () => {
+  // `..` in a URL is the oldest static-server bug there is, and this server is
+  // pointed at a build directory on someone's own machine.
+  assert.equal(safeJoin('/tmp/root', '/../etc/passwd'), null);
+  assert.equal(safeJoin('/tmp/root', '/..%2F..%2Fetc/passwd'), null);
+  assert.equal(safeJoin('/tmp/root', '/a/../../b'), null);
+  assert.equal(safeJoin('/tmp/root', '/assets/app.css'), '/tmp/root/assets/app.css');
+  assert.equal(safeJoin('/tmp/root', '/'), '/tmp/root');
+});
+
+test('safeJoin is not fooled by a sibling directory sharing the prefix', () => {
+  // /tmp/root-evil starts with /tmp/root as a string but is not inside it.
+  assert.equal(safeJoin('/tmp/root', '/../root-evil/x'), null);
+});
+
+test('query strings are stripped before resolving a path', () => {
+  assert.equal(safeJoin('/tmp/root', '/app.css?v=2'), '/tmp/root/app.css');
+});
+
+test('the server serves files, falls back to index.html, and stops', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'serve-'));
+  mkdirSync(join(dir, 'assets'), { recursive: true });
+  writeFileSync(join(dir, 'index.html'), '<p>home</p>');
+  writeFileSync(join(dir, 'assets', 'app.css'), 'body{}');
+
+  const server = await serveDir(dir);
+  try {
+    assert.equal(await (await fetch(`${server.url}/`)).text(), '<p>home</p>');
+
+    const css = await fetch(`${server.url}/assets/app.css`);
+    assert.equal(css.headers.get('content-type'), MIME['.css']);
+    assert.equal(await css.text(), 'body{}');
+
+    // A client-side router owns deep links, so a miss serves index.html —
+    // the same rule the generated nginx config uses. Without it, every route
+    // but the root would 404 and the check would report a blank page.
+    assert.equal(await (await fetch(`${server.url}/students/42`)).text(), '<p>home</p>');
+  } finally {
+    await server.close();
+  }
+});
+
+test('two servers can run at once without colliding', async () => {
+  // Port 0 lets the OS choose, so a second run in another terminal does not
+  // fail on an address already in use.
+  const dir = mkdtempSync(join(tmpdir(), 'serve2-'));
+  writeFileSync(join(dir, 'index.html'), '<p>x</p>');
+  const [a, b] = [await serveDir(dir), await serveDir(dir)];
+  try {
+    assert.notEqual(a.url, b.url);
+  } finally {
+    await a.close();
+    await b.close();
+  }
+});
+
+test('--serve pointed at a source directory is refused', () => {
+  // Serving src/ would render nothing and report zero findings, which is the
+  // most convincing possible false pass.
+  const dir = mkdtempSync(join(tmpdir(), 'nosrc-'));
+  writeFileSync(join(dir, 'App.tsx'), 'export default 1;');
+  const r = run(['--serve', dir, '--no-shots']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /no index\.html/);
+  assert.match(r.stderr, /BUILD output/);
+});
+
+test('--serve on a missing directory is refused', () => {
+  const r = run(['--serve', '/definitely/not/here', '--no-shots']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /not a directory/);
+});
+
 // --- browser-backed ---------------------------------------------------------
 
 const BAD = `<style>
@@ -227,6 +302,14 @@ test('a compliant page passes at every width in both schemes', { skip: !HAS_PW &
   assert.equal(r.status, 0);
   assert.match(r.stdout, /Nothing to fix/);
   assert.match(r.stdout, /3 width\(s\) × 2 schemes/);
+});
+
+test('--serve checks a built directory end to end', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'built-'));
+  writeFileSync(join(dir, 'index.html'), GOOD);
+  const r = run(['--serve', dir, '--no-shots']);
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /Nothing to fix/);
 });
 
 test('screenshots are written per width and scheme', { skip: !HAS_PW && 'playwright not installed' }, () => {
