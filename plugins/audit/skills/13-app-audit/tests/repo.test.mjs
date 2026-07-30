@@ -277,8 +277,10 @@ test('summarizeGovulncheckOutput groups multiple findings for the same OSV and k
 test('summarizeGovulncheckOutput reports a positive clean-scan summary when no findings are present', () => {
   // A bare config-only message is *not* used as the clean-scan fixture here
   // on purpose: govulncheck's own JSON stream has no explicit "scan
-  // complete" message (see golang/go#62340 — still open), and its scan
-  // runner writes `config` before package loading even begins, so
+  // complete" message (golang/go#62340, closed 2023 as working-as-intended —
+  // the maintainers' position is that for a *completed* stream, absence of
+  // `finding` messages is itself the signal), and its scan runner writes
+  // `config` before package loading even begins, so
   // config-only is exactly the shape a run that failed immediately would
   // also produce. Content shape alone can never fully prove completion —
   // that's what interpretGovulncheckResult's exit-status check is for (see
