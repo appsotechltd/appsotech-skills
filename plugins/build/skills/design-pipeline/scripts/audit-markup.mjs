@@ -90,16 +90,32 @@ function suppressed(lines, line) {
   return /design-ok/.test(cur) || /design-ok/.test(prev);
 }
 
+// A raw colour on a custom-property declaration IS the token definition —
+// `--primary: #0B5A7A` is the correct place for a literal, and flagging it
+// means flagging the prescribed answer. That matters most for a single-file
+// prototype, where the skill explicitly says to put the :root and .dark blocks
+// at the top of the artefact because there is no design/ to write to.
+//
+// Only the segment since the last `;` or `{` is considered, so
+// `--a: #fff; color: #000;` still reports the second one.
+export function inTokenDeclaration(line, col) {
+  const segment = line.slice(0, col);
+  const start = Math.max(segment.lastIndexOf(';'), segment.lastIndexOf('{'));
+  return /--[\w-]+\s*:\s*[^;{]*$/.test(segment.slice(start + 1));
+}
+
 // 1. A colour that is not a token. The whole point of the frozen system.
 function hardcodedColour(file, content, lines, ext) {
   const out = [];
-  const push = (line, text) => {
+  const push = (line, text, col) => {
     if (suppressed(lines, line)) return;
+    if (col !== undefined && inTokenDeclaration(lines[line - 1] ?? '', col)) return;
     out.push({
       rule: 'hardcoded-colour', severity: 'error', file, line, text,
       why: 'colour not from a token — it will not follow the design system, and it will not change in dark mode',
     });
   };
+  const columnOf = (index) => index - (content.lastIndexOf('\n', index - 1) + 1);
 
   if (DART_EXT.has(ext)) {
     for (const m of content.matchAll(/Color\(0x[0-9A-Fa-f]{6,8}\)/g)) {
@@ -113,14 +129,14 @@ function hardcodedColour(file, content, lines, ext) {
     const src = lines[line - 1] ?? '';
     // href="#anchor" and url(#svg-ref) are references, not colours.
     if (/href\s*=|url\(#|xlink:href/.test(src)) continue;
-    push(line, `#${m[2]}`);
+    push(line, `#${m[2]}`, columnOf(m.index + m[1].length));
   }
 
   // rgb()/hsl() with literal channels. hsl(var(--token)) is the CORRECT
   // pattern and must never be flagged — that exemption is why this is not a
   // bare search for "hsl(".
   for (const m of content.matchAll(/\b(rgba?|hsla?)\(\s*(?!var\()[^)]*\d[^)]*\)/g)) {
-    push(lineOf(content, m.index), m[0].slice(0, 40));
+    push(lineOf(content, m.index), m[0].slice(0, 40), columnOf(m.index));
   }
   return out;
 }

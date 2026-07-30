@@ -11,6 +11,7 @@ a gate nobody ran.
 ```
 node "$CONTRAST" design/tokens.css      # tokens still compliant
 node "$AUDIT" <src-dir>                 # the code actually uses them
+node "$RESPONSIVE" <url-or-file>        # it holds up in a real browser
 ```
 
 Between them these cover the checklist items marked **[auto]** below. Everything
@@ -70,7 +71,7 @@ which is a decision someone can review — deleting a rule is not.
 ### Accessibility
 
 - [ ] **[auto]** Contrast ≥ 4.5:1 text, ≥ 3:1 focus ring, both light and dark
-- [ ] Touch targets ≥ 44×44px at every breakpoint
+- [ ] **[auto]** Touch targets ≥ 44×44px at every breakpoint
 - [ ] **[auto]** All images have `alt`
 - [ ] **[auto]** All form fields have a `<label>`, `aria-label` or `aria-labelledby`
 - [ ] **[auto]** Focus never removed without a replacement
@@ -79,17 +80,16 @@ which is a decision someone can review — deleting a rule is not.
 
 ### Responsive
 
-- [ ] Works at 320px, 768px (**tablet**) and 1280px
+- [ ] **[auto]** Loads at 320px, 768px (**tablet**) and 1280px with no page overflow
 - [ ] Tablet is a designed layout, not a stretched phone
-- [ ] No horizontal page scroll at any width — wide content scrolls in its own
-      container
+- [ ] **[auto]** No horizontal page scroll — wide content scrolls in its own container
 - [ ] Images `max-w-full`; no fixed width exceeding a phone
-- [ ] Body text ≥16px on mobile
+- [ ] **[auto]** Form controls ≥16px on mobile (below this iOS zooms on focus)
 - [ ] Flutter: checked in landscape and at the largest OS text scale
 
 ### Dark mode
 
-- [ ] Implemented on every surface — web and Flutter alike
+- [ ] **[auto]** (web) Implemented — the rendered page actually changes under `prefers-color-scheme: dark`. Flutter checked by hand.
 - [ ] Driven by tokens; **no component names a raw colour**
 - [ ] Contrast gate passes against the dark block too
 - [ ] Follows the system preference, and an explicit toggle overrides and

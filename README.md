@@ -39,7 +39,21 @@ patterns, the accessibility floor and the gate are vendored and identical in
 all three, so a chat session with no filesystem still produces a compliant,
 tokenised interface.
 
-Two scripts make the gate mechanical rather than aspirational.
+Three scripts make the gate mechanical rather than aspirational; **14 checklist
+items are marked `[auto]`**, and the rest stay human because they are judgement
+calls, not leftovers.
+
+`scripts/responsive-check.mjs` loads the page in Chromium at 320, 768 and
+1280 in both colour schemes. It catches what reading a stylesheet cannot: a
+fixed-width element pushing the page sideways at 320, tap targets under 44px as
+actually laid out, form controls under 16px (below which iOS zooms on focus),
+and a dark block that was written but never wired — detected by comparing the
+rendered body under each scheme. Content inside an `overflow-x:auto` container
+and inline links in body copy are exempt, because both are the prescribed
+pattern. Playwright is not bundled: the script resolves it from the project or
+a global install and exits 3 with an explanation when absent.
+
+
 `scripts/audit-markup.mjs` reads the source and fails on colours declared
 outside `design/`, dynamic Tailwind classes, click handlers on non-interactive
 elements, images without `alt`, unlabelled inputs, banned display faces and

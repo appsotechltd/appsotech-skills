@@ -103,6 +103,7 @@ for base in \
 done
 CONTRAST="$SCRIPTS/contrast.mjs"
 AUDIT="$SCRIPTS/audit-markup.mjs"
+RESPONSIVE="$SCRIPTS/responsive-check.mjs"
 echo "${SCRIPTS:-NOT FOUND}"
 ```
 
@@ -197,11 +198,12 @@ anything else.
 
 ## Phase 5 — Gate
 
-Two scripts, then the checklist. Run them **before presenting anything**.
+Three scripts, then the checklist. Run them **before presenting anything**.
 
 ```
 node "$CONTRAST" design/tokens.css      # the tokens are still compliant
 node "$AUDIT" <src-dir>                 # the code actually uses them
+node "$RESPONSIVE" <url-or-html-file>   # it holds up in a real browser
 ```
 
 The second is the one that catches drift. `contrast.mjs` validates the token
@@ -214,6 +216,21 @@ display faces and focus removed with nothing put back.
 It exits 1 on errors, 0 on warnings alone. Use `--warn-only` to survey an
 existing codebase without failing, and suppress a genuinely-justified line with
 a `design-ok` comment rather than deleting the rule.
+
+The third loads the page in Chromium at 320, 768 and 1280 in both colour
+schemes. It catches what reading a stylesheet cannot: a fixed-width element
+pushing the page sideways at 320, tap targets under 44px as actually laid out,
+form controls under 16px (below which iOS zooms on focus), and — the one no
+static check can reach — **a dark block that was written but never wired**, by
+comparing the rendered body under each scheme. Screenshots land in
+`design/responsive/` and are the artefact that makes a dark-mode review
+possible at all.
+
+It needs something to load: a dev server URL, a preview build, or the `.html`
+file directly for a single-file prototype. **Playwright is not bundled** — the
+script resolves it from the project or a global install, and exits 3 with an
+explanation if absent rather than failing the build or passing silently. When
+that happens, say the responsive items were not verified.
 
 Then walk `references/design-gate.md` end to end. It is the last step on
 finished code, not a checklist to read at the start and remember — and the

@@ -94,6 +94,25 @@ test('the design/ directory is exempt, since tokens live there', () => {
   assert.deepEqual(collect(dir).map((f) => f.path), ['src/ok.tsx']);
 });
 
+test('a token declaration is where raw colour belongs and is exempt', () => {
+  // Caught by running all three gates against a page the skill itself
+  // prescribes: for a single-file prototype there is no design/ to write to,
+  // so the :root and .dark blocks go inline at the top of the artefact — and
+  // the audit was flagging that prescribed answer as four errors.
+  assert.deepEqual(rules('index.html', ':root { --bg: #FFFFFF; --fg: #10202B; }'), []);
+  assert.deepEqual(rules('a.css', '.dark { --background: #08141B; }'), []);
+  // hsl() and rgb() in a declaration are token definitions too.
+  assert.deepEqual(rules('b.css', ':root { --primary: hsl(222 47% 11%); }'), []);
+});
+
+test('a colour used in a normal property is still an error', () => {
+  assert.ok(rules('a.css', '.btn { color: #3B82F6; }').includes('hardcoded-colour'));
+  // And the exemption does not leak across declarations on one line.
+  const mixed = audit('a.css', ':root { --bg: #FFFFFF; color: #3B82F6; }');
+  assert.equal(mixed.length, 1);
+  assert.equal(mixed[0].text, '#3B82F6');
+});
+
 test('a design-ok comment suppresses the line', () => {
   assert.deepEqual(rules('src/a.tsx', 'const brand = "#3B82F6"; // design-ok: vendor logo'), []);
   // And on the line above, for cases where the line itself is full.
