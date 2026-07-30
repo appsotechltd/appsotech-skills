@@ -32,8 +32,9 @@ reasoning the next session inherits.
 The query is **positional**. There is no `--query` flag.
 
 ```bash
-SEARCH=".claude/skills/ui-ux-pro-max/scripts/search.py"   # or wherever it resolved
-
+# $SEARCH is whatever the resolution loop in SKILL.md found. Do not hardcode
+# a path here — the same skill runs from a repo checkout, a plugin install and
+# a home-directory copy, and only one of those three is ever right.
 python3 "$SEARCH" "<query>" -d <domain> -s <stack> -n 3 --json
 ```
 
@@ -90,7 +91,7 @@ freezing.
 pair:
 
 ```bash
-node scripts/contrast.mjs --pair "#FFFFFF" "#3B82F6"
+node "$CONTRAST" --pair "#FFFFFF" "#3B82F6"
 ```
 
 If a pair fails, either darken the background token or take the next result.

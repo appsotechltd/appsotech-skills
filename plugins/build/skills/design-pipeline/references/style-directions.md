@@ -10,7 +10,7 @@ to improvise.
 
 **Every palette here is contrast-verified** — 120 pairs, light and dark, all
 passing 4.5:1 for text and 3:1 for the focus ring. Re-run
-`node scripts/contrast.mjs design/tokens.css` after freezing anyway; the check
+`node "$CONTRAST" design/tokens.css` after freezing anyway; the check
 is cheap and a typo in transcription is not.
 
 ## How to use this file

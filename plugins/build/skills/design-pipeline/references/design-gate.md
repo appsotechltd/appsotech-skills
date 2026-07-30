@@ -63,7 +63,7 @@ a gate nobody ran.
 - [ ] Reduced motion honoured (`prefers-reduced-motion` / `disableAnimations`)
 
 ```
-node scripts/contrast.mjs design/tokens.css
+node "$CONTRAST" design/tokens.css
 ```
 
 ### Responsive

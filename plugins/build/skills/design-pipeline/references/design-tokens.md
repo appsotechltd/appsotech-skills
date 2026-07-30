@@ -115,7 +115,7 @@ body text, so a button using it as intended is non-compliant.
 Run before committing:
 
 ```
-node scripts/contrast.mjs design/tokens.css
+node "$CONTRAST" design/tokens.css
 ```
 
 It checks every foreground/background pair implied by the token names, in each

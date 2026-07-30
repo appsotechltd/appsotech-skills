@@ -49,7 +49,7 @@ selection before it is frozen:
 
 1. **Contrast.** pro-max palettes are *not* contrast-safe by construction — it
    ships `On X`/`X` pairs that sometimes fail 4.5:1. Check before freezing, not
-   at the gate. Phase 3 runs `scripts/contrast.mjs`.
+   at the gate. Phase 3 runs the contrast gate — see **Paths** below.
 2. **Fonts.** Inter, Roboto and Arial are never display faces here, whatever
    pro-max returns. Re-query for another pairing.
 3. **Motion.** GSAP presets that animate layout properties are rewritten to
@@ -81,6 +81,35 @@ better", and never triggered by a new surface being added.
 
 Tokens are **per product, not per surface**. `webapp` and `admin-web` share one
 system, or the same product looks like two.
+
+## Paths — read this before running anything
+
+Two different roots are in play and confusing them breaks the gate.
+
+- **`design/…`** is relative to the **target project** — the repo being built.
+- **`scripts/…` and `references/…`** are relative to **this skill's own
+  directory**, wherever it is installed.
+
+The working directory during a run is the target project, so a bare
+`node scripts/contrast.mjs` never resolves. Resolve the skill once, at the
+start of the run, and use the variable everywhere after:
+
+```bash
+for c in \
+  "$CLAUDE_PLUGIN_ROOT/skills/design-pipeline/scripts/contrast.mjs" \
+  "$HOME/.claude/skills/design-pipeline/scripts/contrast.mjs" \
+  ".claude/skills/design-pipeline/scripts/contrast.mjs"; do
+  [ -f "$c" ] && CONTRAST="$c" && break
+done
+echo "${CONTRAST:-NOT FOUND}"
+```
+
+`$CLAUDE_PLUGIN_ROOT` **is** correct here — this is our own plugin. It is only
+wrong when hunting for pro-max, which lives in a different plugin.
+
+Every `$CONTRAST` below means the path resolved above. If it did not resolve,
+say so and fall back to checking contrast by hand against the table in
+`references/design-tokens.md` — do not skip the check silently.
 
 ---
 
@@ -142,7 +171,7 @@ Read `references/design-tokens.md`, then write:
 Then run the contrast gate before committing anything:
 
 ```
-node scripts/contrast.mjs design/tokens.css
+node "$CONTRAST" design/tokens.css
 ```
 
 It exits non-zero on any pair below its threshold. **Fix the token and re-run —
@@ -215,6 +244,31 @@ and 192 palettes down to 12 curated directions. Token architecture, the
 accessibility floor, the patterns and the gate come from vendored files and are
 identical in all three tiers. A chat session with no filesystem still produces
 a compliant, tokenised, non-generic interface.
+
+## No filesystem — the claude.ai chat case
+
+In chat there is no repository, no shell and no persistence between
+conversations. Every phase still runs; four of them run differently. Do not
+skip a phase because its artefact cannot be written — say where the artefact
+would have gone instead.
+
+| Phase | In chat |
+|---|---|
+| 1 Detect | Nothing to read. **Ask** what it is being built in — and take "a single HTML file" as a real answer, not an absence of one. |
+| 2 Select | No Python, so this is **tier 3 by definition**. Use `references/style-directions.md` and say the range was the twelve. |
+| 3 Freeze | Nothing to write to. Put the `:root` and `.dark` blocks **at the top of the artefact itself**, and paste the design-system summary into the reply so the user can commit it later. |
+| 4 Build | Unchanged. |
+| 5 Gate | The script cannot run. Walk the checklist by hand — and the palettes in `style-directions.md` are pre-verified precisely so the numbers do not have to be recomputed here. |
+
+**The frozen design rule still applies, with the user as the store.** There is
+no `design/design-system.md` to read, so ask whether one exists before
+selecting: "do you already have a palette and fonts for this?" A user who
+pastes their tokens in has frozen them, and re-selecting over the top is the
+same drift the rule exists to prevent — it just arrives by a different route.
+
+Never invent a palette in chat when `style-directions.md` covers the case.
+Improvising is what produces the generic result, and it is unnecessary: twelve
+verified directions are available with no filesystem at all.
 
 ## Boundary
 
