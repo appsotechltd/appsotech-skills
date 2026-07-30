@@ -350,12 +350,101 @@ test('storage and mail without a backend are refused', () => {
   }
 });
 
+test('the worker scaffolds an entrypoint, queue, image and compose service', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--worker']);
+  for (const f of [
+    'cmd/worker/main.go', 'internal/jobs/queue.go', 'internal/jobs/worker.go',
+    'Dockerfile.worker',
+    'migrations/000001_job_queue.up.sql', 'migrations/000001_job_queue.down.sql',
+  ]) {
+    assert.ok(existsSync(join(out, 'backend', f)), `missing backend/${f}`);
+  }
+  const compose = readFileSync(join(out, 'deploy', 'demo.compose.yml'), 'utf8');
+  assert.match(compose, /demo-worker:/);
+  assert.match(compose, /dockerfile: Dockerfile\.worker/);
+  // The worker serves no HTTP; a router would health-check a port nothing
+  // listens on.
+  assert.doesNotMatch(compose, /routers\.demo-worker\.rule/);
+});
+
+test('the queue claims with SKIP LOCKED and can reap dead workers', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--worker']);
+  const q = readFileSync(join(out, 'backend', 'internal', 'jobs', 'queue.go'), 'utf8');
+  // Without SKIP LOCKED every worker queues behind the same row.
+  assert.match(q, /FOR UPDATE SKIP LOCKED/);
+  // A process killed between Claim and Succeed leaves a row stuck in
+  // 'running' that nothing would ever pick up again.
+  assert.match(q, /func \(q \*Queue\) Reap\(/);
+  // Failures are kept, not deleted — a queue that discards them cannot tell
+  // you what stopped working.
+  assert.match(q, /'dead'/);
+});
+
+test('a tenant job runs in a transaction with SET LOCAL, not a session setting', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--worker']);
+  const w = readFileSync(join(out, 'backend', 'internal', 'jobs', 'worker.go'), 'utf8');
+  // set_config(..., true) is SET LOCAL: discarded at commit or rollback.
+  // The false variant is session-level — it would apply to a connection the
+  // handler never uses, then linger on it for the next caller out of the pool.
+  assert.match(w, /set_config\('app\.tenant_id', \$1, true\)/);
+  assert.doesNotMatch(w, /set_config\('app\.tenant_id', \$1, false\)/);
+  assert.match(w, /r\.pool\.Begin\(/);
+  // The handler gets the tx, or it would escape RLS by using the pool.
+  assert.match(w, /type Handler func\(ctx context\.Context, tx pgx\.Tx/);
+});
+
+test('the job_queue migration deliberately carries no RLS policy', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--worker']);
+  const up = readFileSync(
+    join(out, 'backend', 'migrations', '000001_job_queue.up.sql'), 'utf8');
+  // The worker claims across all tenants with no tenant set. A policy here
+  // would make Claim return nothing and the queue would look permanently
+  // empty, with no error anywhere.
+  assert.doesNotMatch(up, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(up, /NO ROW LEVEL SECURITY/);
+  // The claim index must match the claim query, or it carries every finished
+  // job forever.
+  assert.match(up, /WHERE status = 'pending'/);
+});
+
+test('mail implies a worker, since sending from a handler blocks the user', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--mail']);
+  assert.ok(existsSync(join(out, 'backend', 'cmd', 'worker', 'main.go')));
+  const main = readFileSync(join(out, 'backend', 'cmd', 'worker', 'main.go'), 'utf8');
+  assert.match(main, /runner\.Register\("email\.send"/);
+});
+
+test('a worker without a backend is refused', () => {
+  const { status, stderr } = runExpectingFailure([
+    'demo', '--surfaces', 'webapp', '--worker',
+  ]);
+  assert.equal(status, 2);
+  assert.match(stderr, /worker needs `backend`/);
+});
+
+test('mail.Message is json-tagged because it persists as a job payload', () => {
+  const out = tmp();
+  run(['demo', '--surfaces', 'backend', '--out', out, '--mail']);
+  const m = readFileSync(join(out, 'backend', 'internal', 'mail', 'mail.go'), 'utf8');
+  // Renaming an untagged field strands every message already queued: they
+  // decode to empty strings and send blank mail.
+  assert.match(m, /To\s+\[\]string\s+`json:"to"`/);
+  assert.match(m, /Subject string\s+`json:"subject"`/);
+});
+
 test('capabilities not asked for leave no trace', () => {
   const out = tmp();
   run(['demo', '--surfaces', 'backend', '--out', out, '--no-redis']);
-  for (const d of ['cache', 'storage', 'mail', 'realtime']) {
+  for (const d of ['cache', 'storage', 'mail', 'realtime', 'jobs']) {
     assert.equal(existsSync(join(out, 'backend', 'internal', d)), false, d);
   }
+  assert.equal(existsSync(join(out, 'backend', 'cmd', 'worker')), false);
+  assert.equal(existsSync(join(out, 'backend', 'Dockerfile.worker')), false);
   const goMod = readFileSync(join(out, 'backend', 'go.mod'), 'utf8');
   for (const dep of ['redis', 'aws-sdk', 'livekit', 'websocket']) {
     assert.doesNotMatch(goMod, new RegExp(dep), `${dep} leaked into go.mod`);

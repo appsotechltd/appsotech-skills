@@ -1284,11 +1284,14 @@ func New(cfg Config) (*Mailer, error) {
 	}, nil
 }
 
+// Tagged because a Message is persisted as a job payload in jsonb, not just
+// passed in memory. Renaming a field without a tag would strand every message
+// already queued — they would decode to empty strings and send blank mail.
 type Message struct {
-	To      []string
-	Subject string
-	HTML    string
-	Text    string
+	To      []string \`json:"to"\`
+	Subject string   \`json:"subject"\`
+	HTML    string   \`json:"html"\`
+	Text    string   \`json:"text"\`
 }
 
 // Send delivers one message synchronously.
@@ -1376,6 +1379,526 @@ func (m *Mailer) build(msg Message) []byte {
 	fmt.Fprintf(&b, "--%s--\\r\\n", boundary)
 	return []byte(b.String())
 }
+`;
+}
+
+export function goJobsQueue(slug) {
+  return `package jobs
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// A Postgres-backed job queue.
+//
+// Postgres rather than Redis, deliberately. The cache Redis runs with
+// allkeys-lru, which will silently evict a queued job under memory pressure —
+// the failure is a notification that never arrives, with nothing in any log.
+// A job also wants the same transaction as the row that caused it, and only
+// the database it lives in can offer that.
+type Queue struct {
+	pool *pgxpool.Pool
+}
+
+func NewQueue(pool *pgxpool.Pool) *Queue { return &Queue{pool: pool} }
+
+type Job struct {
+	ID          int64
+	TenantID    *string
+	Kind        string
+	Payload     json.RawMessage
+	Attempts    int
+	MaxAttempts int
+}
+
+const enqueueSQL = \`
+INSERT INTO job_queue (tenant_id, kind, payload, run_after, max_attempts)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id\`
+
+// Enqueue adds a job. Pass a tx to enqueue inside the transaction that
+// produced the work — that is what makes "row written AND job queued" atomic.
+// Enqueueing after a commit means a crash in between loses the job; before it
+// means a rollback leaves a job for a row that does not exist.
+func (q *Queue) Enqueue(ctx context.Context, tx pgx.Tx, tenantID *string, kind string, payload any, runAfter time.Time, maxAttempts int) (int64, error) {
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return 0, fmt.Errorf("marshal payload: %w", err)
+	}
+	if maxAttempts <= 0 {
+		maxAttempts = 5
+	}
+	if runAfter.IsZero() {
+		runAfter = time.Now()
+	}
+
+	var row pgx.Row
+	if tx != nil {
+		row = tx.QueryRow(ctx, enqueueSQL, tenantID, kind, b, runAfter, maxAttempts)
+	} else {
+		row = q.pool.QueryRow(ctx, enqueueSQL, tenantID, kind, b, runAfter, maxAttempts)
+	}
+	var id int64
+	if err := row.Scan(&id); err != nil {
+		return 0, fmt.Errorf("enqueue: %w", err)
+	}
+	return id, nil
+}
+
+// FOR UPDATE SKIP LOCKED is the whole trick. Without SKIP LOCKED every worker
+// queues behind the same row and the pool serialises; with it, each worker
+// takes a different job and they scale linearly.
+const claimSQL = \`
+UPDATE job_queue SET
+  status     = 'running',
+  claimed_at = now(),
+  claimed_by = $1,
+  attempts   = attempts + 1,
+  updated_at = now()
+WHERE id = (
+  SELECT id FROM job_queue
+  WHERE status = 'pending' AND run_after <= now()
+  ORDER BY run_after
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1
+)
+RETURNING id, tenant_id, kind, payload, attempts, max_attempts\`
+
+// Claim takes one job, or returns nil when there is nothing due.
+func (q *Queue) Claim(ctx context.Context, workerID string) (*Job, error) {
+	var j Job
+	err := q.pool.QueryRow(ctx, claimSQL, workerID).
+		Scan(&j.ID, &j.TenantID, &j.Kind, &j.Payload, &j.Attempts, &j.MaxAttempts)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("claim: %w", err)
+	}
+	return &j, nil
+}
+
+func (q *Queue) Succeed(ctx context.Context, id int64) error {
+	_, err := q.pool.Exec(ctx,
+		\`UPDATE job_queue SET status='done', updated_at=now(), last_error=NULL WHERE id=$1\`, id)
+	return err
+}
+
+// Fail reschedules with exponential backoff, or marks the job dead once it has
+// used its attempts. A dead job is kept, never deleted — a queue that discards
+// its failures cannot tell you what stopped working.
+func (q *Queue) Fail(ctx context.Context, j *Job, cause error) error {
+	if j.Attempts >= j.MaxAttempts {
+		_, err := q.pool.Exec(ctx,
+			\`UPDATE job_queue SET status='dead', last_error=$2, updated_at=now() WHERE id=$1\`,
+			j.ID, cause.Error())
+		return err
+	}
+	backoff := time.Duration(1<<uint(j.Attempts)) * time.Second
+	if backoff > 10*time.Minute {
+		backoff = 10 * time.Minute
+	}
+	_, err := q.pool.Exec(ctx, \`
+UPDATE job_queue SET
+  status     = 'pending',
+  run_after  = now() + $2::interval,
+  claimed_at = NULL,
+  claimed_by = NULL,
+  last_error = $3,
+  updated_at = now()
+WHERE id = $1\`, j.ID, fmt.Sprintf("%d seconds", int(backoff.Seconds())), cause.Error())
+	return err
+}
+
+// Reap returns jobs whose worker died mid-run.
+//
+// A process killed between Claim and Succeed leaves a row stuck in 'running'
+// forever — nothing else will ever pick it up, because Claim only looks at
+// 'pending'. This is what makes the queue survive a deploy that restarts a
+// worker mid-job. The timeout must exceed the longest job, or a slow job is
+// reaped and run twice concurrently.
+func (q *Queue) Reap(ctx context.Context, olderThan time.Duration) (int64, error) {
+	tag, err := q.pool.Exec(ctx, \`
+UPDATE job_queue SET status='pending', claimed_at=NULL, claimed_by=NULL, updated_at=now()
+WHERE status='running' AND claimed_at < now() - $1::interval\`,
+		fmt.Sprintf("%d seconds", int(olderThan.Seconds())))
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}
+`;
+}
+
+export function goJobsWorker(slug) {
+  return `package jobs
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
+)
+
+// Handler runs one job.
+//
+// tx is non-nil EXACTLY WHEN the job carries a tenant. For those, the runner
+// has already begun a transaction and set app.tenant_id on it, so every query
+// made through tx is subject to the same RLS policies a request would be —
+// and a handler that queries the pool directly instead will silently escape
+// them. Use tx for all database work.
+//
+// For system jobs (no tenant) tx is nil and the handler uses the pool.
+type Handler func(ctx context.Context, tx pgx.Tx, payload json.RawMessage) error
+
+// Runner polls the queue and dispatches to handlers.
+//
+// EVERY HANDLER MUST BE IDEMPOTENT. Delivery is at-least-once: a worker that
+// dies after doing the work but before Succeed will run the same job again
+// when it is reaped. "Send the welcome email" run twice is two emails; "charge
+// the card" run twice is a chargeback. Make the effect keyed on something
+// stable, or check before acting.
+type Runner struct {
+	queue    *Queue
+	pool     *pgxpool.Pool
+	workerID string
+	handlers map[string]Handler
+
+	// Must exceed the longest handler, or a slow job is reaped and ends up
+	// running twice at once.
+	claimTimeout time.Duration
+	pollInterval time.Duration
+}
+
+func NewRunner(pool *pgxpool.Pool, workerID string) *Runner {
+	return &Runner{
+		queue:        NewQueue(pool),
+		pool:         pool,
+		workerID:     workerID,
+		handlers:     make(map[string]Handler),
+		claimTimeout: 15 * time.Minute,
+		pollInterval: 2 * time.Second,
+	}
+}
+
+func (r *Runner) Register(kind string, h Handler) { r.handlers[kind] = h }
+
+// Run polls until the context is cancelled, then returns. The caller's
+// shutdown must wait for it: returning mid-job leaves a row in 'running' that
+// only the reaper will recover, minutes later.
+func (r *Runner) Run(ctx context.Context) {
+	reap := time.NewTicker(time.Minute)
+	defer reap.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info().Msg("worker stopping")
+			return
+		case <-reap.C:
+			if n, err := r.queue.Reap(ctx, r.claimTimeout); err != nil {
+				log.Error().Err(err).Msg("reap failed")
+			} else if n > 0 {
+				log.Warn().Int64("jobs", n).Msg("requeued jobs from dead workers")
+			}
+		default:
+		}
+
+		job, err := r.queue.Claim(ctx, r.workerID)
+		if err != nil {
+			log.Error().Err(err).Msg("claim failed")
+			sleep(ctx, r.pollInterval)
+			continue
+		}
+		if job == nil {
+			sleep(ctx, r.pollInterval)
+			continue
+		}
+		r.run(ctx, job)
+	}
+}
+
+func (r *Runner) run(ctx context.Context, job *Job) {
+	l := log.With().Int64("job", job.ID).Str("kind", job.Kind).Int("attempt", job.Attempts).Logger()
+
+	handler, ok := r.handlers[job.Kind]
+	if !ok {
+		// An unregistered kind is a deploy skew — a job enqueued by a newer API
+		// than this worker. Failing it lets backoff carry it until the worker
+		// catches up, rather than killing it on the first attempt.
+		_ = r.queue.Fail(ctx, job, fmt.Errorf("no handler registered for %q", job.Kind))
+		l.Error().Msg("no handler")
+		return
+	}
+
+	jobCtx, cancel := context.WithTimeout(ctx, r.claimTimeout)
+	defer cancel()
+
+	var err error
+	if job.TenantID == nil {
+		// A system job. No tenant to set, and no transaction — a handler that
+		// does slow external work (sending mail, calling an API) must not hold
+		// one open for the duration.
+		err = handler(jobCtx, nil, job.Payload)
+	} else {
+		jobCtx = context.WithValue(jobCtx, tenantKey{}, *job.TenantID)
+		err = r.runInTenant(jobCtx, *job.TenantID, handler, job.Payload)
+	}
+
+	if err != nil {
+		l.Error().Err(err).Msg("job failed")
+		if ferr := r.queue.Fail(ctx, job, err); ferr != nil {
+			l.Error().Err(ferr).Msg("could not record failure")
+		}
+		return
+	}
+	if err := r.queue.Succeed(ctx, job.ID); err != nil {
+		// The work is done but the row still says running. The reaper will
+		// requeue it, which is why handlers must be idempotent.
+		l.Error().Err(err).Msg("job succeeded but could not be marked done")
+		return
+	}
+	l.Info().Msg("job done")
+}
+
+// runInTenant runs a handler inside a transaction with the job's tenant set.
+//
+// SET LOCAL, inside a transaction — NOT set_config(..., false) on a pooled
+// connection. Two reasons, and both are bugs that do not announce themselves:
+//
+//   A session-level setting applies to ONE connection. The handler would take
+//   a different connection out of the pool and run with no tenant at all, so
+//   every tenant-scoped query returns nothing — which reads as a missing row
+//   rather than a missing setting.
+//
+//   Worse, that connection goes back to the pool still carrying the setting.
+//   The next caller to draw it inherits another tenant's context. SET LOCAL is
+//   discarded at commit or rollback, so it cannot outlive the job.
+func (r *Runner) runInTenant(ctx context.Context, tenantID string, handler Handler, payload json.RawMessage) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin: %w", err)
+	}
+	// Rollback is a no-op once the transaction has committed.
+	defer func() { _ = tx.Rollback(context.Background()) }()
+
+	if _, err := tx.Exec(ctx, "SELECT set_config('app.tenant_id', $1, true)", tenantID); err != nil {
+		return fmt.Errorf("set tenant: %w", err)
+	}
+	if err := handler(ctx, tx, payload); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+type tenantKey struct{}
+
+// TenantID returns the tenant a job belongs to, if any.
+func TenantID(ctx context.Context) string {
+	if v, ok := ctx.Value(tenantKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func sleep(ctx context.Context, d time.Duration) {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+`;
+}
+
+export function goWorkerMain(slug, caps = {}) {
+  const { mail = false } = caps;
+  const mod = `${GO_MODULE_ROOT}/${slug}/api`;
+
+  // json and pgx are used only by a registered handler. With none registered
+  // they are unused imports, which is a compile error in Go rather than a
+  // warning — so they follow the handlers rather than being unconditional.
+  const handlerImports = mail
+    ? '\t"encoding/json"\n\n\t"github.com/jackc/pgx/v5"\n'
+    : '';
+  const mailImport = mail ? `\n\t"${mod}/internal/mail"` : '';
+  const mailSetup = mail
+    ? `
+	mailer, err := mail.New(mail.Config{
+		Host:     cfg.SMTPHost,
+		Port:     cfg.SMTPPort,
+		Username: cfg.SMTPUsername,
+		Password: cfg.SMTPPassword,
+		From:     cfg.SMTPFrom,
+		FromName: cfg.SMTPFromName,
+	})
+	if err != nil {
+		log.Fatal().Err(err).Msg("mail")
+	}
+
+	// Email is sent here rather than in a handler: Zoho throttles, a handshake
+	// plus delivery routinely takes seconds, and a user waiting on a signup
+	// response should not also be waiting on someone else's mail server.
+	// tx is nil here: enqueue this kind with a nil tenant, so the send does not
+	// hold a transaction open across an SMTP handshake. That means the payload
+	// has to be self-contained — render the message when enqueueing, not here.
+	runner.Register("email.send", func(ctx context.Context, tx pgx.Tx, payload json.RawMessage) error {
+		var m mail.Message
+		if err := json.Unmarshal(payload, &m); err != nil {
+			return err
+		}
+		return mailer.Send(ctx, m)
+	})
+`
+    : '';
+
+  return `package main
+
+import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
+
+${handlerImports}	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+
+	"${mod}/internal/config"
+	"${mod}/internal/db"
+	"${mod}/internal/jobs"${mailImport}
+)
+
+func main() {
+	zerolog.TimeFieldFormat = "2006-01-02T15:04:05Z07:00"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal().Err(err).Msg("config")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatal().Err(err).Msg("database")
+	}
+	defer pool.Close()
+
+	// The hostname distinguishes replicas in claimed_by, which is how you tell
+	// which container is sitting on a stuck job.
+	workerID, _ := os.Hostname()
+	if workerID == "" {
+		workerID = "worker"
+	}
+	runner := jobs.NewRunner(pool, workerID)
+${mailSetup}
+	// Register the rest of this product's job kinds here. Every handler must
+	// be idempotent — delivery is at-least-once.
+
+	log.Info().Str("worker", workerID).Msg("worker started")
+
+	// Run blocks until the context is cancelled and returns only after the
+	// job in flight has finished. Exiting sooner would leave that row in
+	// 'running' for the reaper to recover minutes later.
+	runner.Run(ctx)
+	log.Info().Msg("worker stopped")
+}
+`;
+}
+
+export function jobQueueMigrationUp() {
+  return `-- The job queue. Infrastructure rather than domain, so it is scaffolded with
+-- the service instead of being written per product.
+
+CREATE TABLE IF NOT EXISTS job_queue (
+  id           bigserial PRIMARY KEY,
+  -- Nullable: some jobs are system-wide and belong to no tenant.
+  tenant_id    uuid,
+  kind         text        NOT NULL,
+  payload      jsonb       NOT NULL DEFAULT '{}'::jsonb,
+  status       text        NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'running', 'done', 'dead')),
+  attempts     int         NOT NULL DEFAULT 0,
+  max_attempts int         NOT NULL DEFAULT 5,
+  run_after    timestamptz NOT NULL DEFAULT now(),
+  claimed_at   timestamptz,
+  claimed_by   text,
+  last_error   text,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- Partial index matching the claim query exactly. Without the WHERE clause
+-- the index carries every completed job forever and the claim gets slower
+-- with age rather than with backlog.
+CREATE INDEX IF NOT EXISTS job_queue_claim_idx
+  ON job_queue (run_after)
+  WHERE status = 'pending';
+
+-- Finding the jobs belonging to one tenant, for support and for cleanup.
+CREATE INDEX IF NOT EXISTS job_queue_tenant_idx
+  ON job_queue (tenant_id, status);
+
+-- Reaping stuck jobs.
+CREATE INDEX IF NOT EXISTS job_queue_reap_idx
+  ON job_queue (claimed_at)
+  WHERE status = 'running';
+
+-- DELIBERATELY NO ROW LEVEL SECURITY ON THIS TABLE.
+--
+-- Every other table gets a tenant isolation policy. This one must not: the
+-- worker claims across all tenants and runs with no tenant set, so a policy
+-- here would make Claim return nothing and the queue would appear to be
+-- permanently empty — with no error anywhere.
+--
+-- Isolation is enforced one level in instead: the runner sets app.tenant_id
+-- from the claimed job before calling the handler, so every query the handler
+-- makes is subject to the same policies a request would be. The payload is
+-- the only thing that crosses without a policy, which is why a payload should
+-- carry ids rather than copied rows.
+`;
+}
+
+export function jobQueueMigrationDown() {
+  return `DROP INDEX IF EXISTS job_queue_reap_idx;
+DROP INDEX IF EXISTS job_queue_tenant_idx;
+DROP INDEX IF EXISTS job_queue_claim_idx;
+DROP TABLE IF EXISTS job_queue;
+`;
+}
+
+export function goWorkerDockerfile(slug) {
+  return `# ${slug} background worker — same module as the API, different entrypoint.
+# Coolify builds with base directory = /backend, this build context.
+FROM golang:1.24 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
+
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /
+COPY --from=build /out/worker /worker
+
+# No EXPOSE and no port. The worker serves no HTTP — it polls the queue. Give
+# it a Traefik router and Traefik will health-check a port nothing listens on.
+USER nonroot:nonroot
+ENTRYPOINT ["/worker"]
 `;
 }
 

@@ -38,6 +38,7 @@ backend/
 │   ├── cache/          # Redis: read-through cache, rate limiting
 │   ├── config/         # environment, read once at boot
 │   ├── db/             # pgxpool construction
+│   ├── jobs/           # Postgres job queue and the worker runner
 │   ├── mail/           # Zoho SMTP
 │   ├── middleware/     # logger, cors, auth, tenant, rbac
 │   ├── problems/       # RFC 7807 error types
@@ -48,8 +49,12 @@ backend/
 └── migrations/         # 000001_name.up.sql / .down.sql
 ```
 
-`cache/`, `mail/`, `realtime/` and `storage/` are scaffolded only when the
-product asked for them — see `services.md`.
+`cache/`, `jobs/`, `mail/`, `realtime/` and `storage/` are scaffolded only when
+the product asked for them — see `services.md`.
+
+`cmd/worker` shares this module and its config; it is a second entrypoint, not
+a service of its own. It builds from `Dockerfile.worker` and gets no port and
+no Traefik router, because it serves no HTTP.
 
 `internal/` is one package per domain concept — `student`, `fees`, `timetable`,
 `assessment` — not one package per technical layer. A `handlers/` directory

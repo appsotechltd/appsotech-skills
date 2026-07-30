@@ -24,6 +24,7 @@ to build* and *what the product does* — nothing else.
 | Public web | Next.js 15 App Router, TypeScript, Tailwind v4 |
 | Web behind auth | React 18 + Vite 5, TanStack Query, zustand, react-hook-form + zod, i18next, Sentry |
 | Mobile | Flutter 3.5 — dio, riverpod, go_router |
+| Background jobs | Postgres queue (`FOR UPDATE SKIP LOCKED`) + a Go worker |
 | Cache / rate limit / bus | Redis 7 |
 | Live chat | fasthttp websocket + Redis pub/sub |
 | Live voice and video | LiveKit — the API mints tokens, media never proxies |
@@ -79,9 +80,8 @@ Question 2 — *Which services?*
 | Option | Description to show |
 |---|---|
 | `backend` | Go API — fasthttp + pgx/v5, served same-origin at `/v1`. |
+| `worker` | Background jobs — a second entrypoint in the API's own module, with a Postgres queue. |
 | `mobile` | Flutter — learner mobile app. |
-| `worker` | Go background worker sharing the API's module — jobs, scheduled work, and every outbound email. |
-| `storage` | Cloudflare R2 for uploads — presigned, so bytes never pass through the API. |
 
 Question 3 — *Which of these does it need?*
 
@@ -89,11 +89,15 @@ Question 3 — *Which of these does it need?*
 |---|---|
 | Live chat | Websocket messaging. Forces Redis on: without a shared bus, a message reaches only clients on the sender's replica. |
 | Live voice / video | LiveKit calls. The API mints short-lived join tokens; media goes direct. |
-| Transactional email | Zoho SMTP — signup, password reset, notifications. |
-| Redis caching | On by default whenever there is an API. Untick only for something genuinely trivial. |
+| Transactional email | Zoho SMTP. Selects the worker too — sending from a request handler makes the user wait on someone else's mail server. |
+| File uploads | Cloudflare R2, presigned, so bytes never pass through the API. |
 
 Recommend `backend` + `webapp` + `tenant-web` as the smallest coherent product
-and mark it so. Do not pre-select anything in question 3 beyond Redis.
+and mark it so. Pre-select nothing in question 3.
+
+**Redis is not a checkbox** — it comes with any API by default, for caching and
+rate limiting. Mention it rather than asking, and pass `--no-redis` only if the
+operator says they do not want it.
 
 There is deliberately **no gateway option**. Coolify's Traefik is the only
 ingress; a second proxy doing on-demand TLS would have to own `:443`, which
@@ -110,7 +114,7 @@ about an incoherent selection — web surfaces without an API, `webapp` without
 ```
 node scripts/scaffold.mjs <slug> --surfaces <comma,separated> \
   --out <targetDir> --root-domain <domain> \
-  [--realtime chat,video] [--storage] [--mail] [--no-redis] \
+  [--worker] [--realtime chat,video] [--storage] [--mail] [--no-redis] \
   [--allocations <path/to/ports-and-databases.md>]
 ```
 
@@ -169,10 +173,14 @@ Read `references/backend-go.md`, then `references/web-surfaces.md`, then
 took any of caching, chat, calls, storage or email. Read
 `references/mobile-flutter.md` only if `mobile` was selected.
 
-One rule from `services.md` applies to every feature and is worth carrying in
-before you read it: **cache keys, websocket rooms, LiveKit room names and R2
-object keys are all namespaced by tenant.** None of them is a database row, so
-row-level security does not cover any of them.
+Two rules from `services.md` apply to every feature and are worth carrying in
+before you read it:
+
+- **Cache keys, websocket rooms, LiveKit room names and R2 object keys are all
+  namespaced by tenant.** None of them is a database row, so row-level security
+  does not cover any of them.
+- **Every job handler must be idempotent.** Delivery is at-least-once — a
+  worker that dies after doing the work runs the job again when it is reaped.
 
 **Build vertically, one feature at a time — never layer by layer.** A feature
 is done when a real user action reaches Postgres and comes back. Finishing all
@@ -220,7 +228,7 @@ Do not report a surface as built on the strength of having written it.
 
 | Surface | Command |
 |---|---|
-| Go | `go build ./... && go vet ./... && go test ./...` |
+| Go | `go mod tidy && go build ./... && go vet ./... && go test ./...` |
 | Next.js | `npm run build && npm run typecheck` |
 | Vite | `npm run build && npm run type-check && npm run test` |
 | Flutter | `flutter analyze && flutter test` |

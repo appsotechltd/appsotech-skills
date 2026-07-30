@@ -113,6 +113,7 @@ export function allocate({
   dbName = null,
   redis = null,
   realtime = [],
+  worker = false,
 } = {}) {
   validateSlug(slug);
   const selected = normaliseSelection(surfaces);
@@ -125,6 +126,12 @@ export function allocate({
     }
   }
   const hasBackend = selected.includes('backend');
+  if (worker && !hasBackend) {
+    throw new Error(
+      'worker needs `backend` — it is a second entrypoint in the API\'s own Go ' +
+        'module (cmd/worker), not a service of its own',
+    );
+  }
   if (realtime.length > 0 && !hasBackend) {
     throw new Error(
       'realtime needs `backend` — websocket hubs and LiveKit tokens are both ' +
@@ -172,6 +179,7 @@ export function allocate({
     database,
     redis: wantRedis,
     realtime: REALTIME_MODES.filter((m) => realtime.includes(m)),
+    worker: Boolean(worker),
   };
 }
 

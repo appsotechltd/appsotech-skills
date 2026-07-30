@@ -49,7 +49,7 @@ const surfacesArg = flagValue('--surfaces');
 if (!slug || !surfacesArg) {
   console.error(
     'usage: scaffold.mjs <slug> --surfaces a,b,c [--out DIR] [--root-domain D]\n' +
-      '       [--realtime chat,video] [--no-redis] [--storage] [--mail]\n' +
+      '       [--realtime chat,video] [--no-redis] [--storage] [--mail] [--worker]\n' +
       `       surfaces: ${SURFACE_KEYS.join(', ')}`,
   );
   process.exit(2);
@@ -69,6 +69,9 @@ const realtime = (flagValue('--realtime') ?? '')
 const redis = args.includes('--no-redis') ? false : args.includes('--redis') ? true : null;
 const storage = args.includes('--storage');
 const mail = args.includes('--mail');
+// Mail implies a worker: sending from a request handler makes the user wait on
+// someone else's mail server, so the send belongs in a job.
+const worker = args.includes('--worker') || mail;
 
 let selected;
 try {
@@ -90,25 +93,33 @@ if (allocationsPath) {
   used = parseAllocations(readFileSync(allocationsPath, 'utf8'));
 }
 
+// Checked before allocate(), so the message names what the caller actually
+// asked for. `--mail` implies a worker, and letting allocate() fail first
+// answered a request for mail with a complaint about a worker.
+if ((storage || mail) && !selected.includes('backend')) {
+  console.error(
+    '--storage and --mail need `backend`: both are API-side, and R2 keys and ' +
+      'SMTP credentials cannot live in a browser bundle',
+  );
+  process.exit(2);
+}
+
 let alloc;
 try {
-  alloc = allocate({ slug, surfaces: selected, used, dbPrefix, dbName, redis, realtime });
+  alloc = allocate({
+    slug, surfaces: selected, used, dbPrefix, dbName, redis, realtime, worker,
+  });
 } catch (err) {
   console.error(String(err.message));
   process.exit(2);
 }
-// Storage and mail are API-side concerns; asking for them without a backend
-// is a selection mistake rather than a thing to silently drop.
 const caps = {
   redis: alloc.redis,
   realtime: alloc.realtime,
   storage,
   mail,
+  worker: alloc.worker,
 };
-if ((storage || mail) && !alloc.surfaces.includes('backend')) {
-  console.error('--storage and --mail need `backend`: both are API-side, and R2 keys and SMTP credentials cannot live in a browser bundle');
-  process.exit(2);
-}
 
 const written = [];
 function write(relPath, content) {
@@ -145,6 +156,16 @@ for (const key of alloc.surfaces) {
     }
     if (caps.realtime.includes('video')) {
       write(`${dir}/internal/realtime/livekit.go`, t.goRealtimeVideo(slug));
+    }
+    if (caps.worker) {
+      write(`${dir}/cmd/worker/main.go`, t.goWorkerMain(slug, caps));
+      write(`${dir}/internal/jobs/queue.go`, t.goJobsQueue(slug));
+      write(`${dir}/internal/jobs/worker.go`, t.goJobsWorker(slug));
+      write(`${dir}/Dockerfile.worker`, t.goWorkerDockerfile(slug));
+      // Infrastructure, not domain — so it ships with the service rather than
+      // being rewritten per product.
+      write(`${dir}/migrations/000001_job_queue.up.sql`, t.jobQueueMigrationUp());
+      write(`${dir}/migrations/000001_job_queue.down.sql`, t.jobQueueMigrationDown());
     }
     write(`${dir}/internal/db/db.go`, t.goDB(slug));
     write(`${dir}/internal/problems/problems.go`, t.goProblems(slug));
@@ -217,6 +238,7 @@ console.log(`product   ${slug}`);
 console.log(`database  ${alloc.database}`);
 console.log(`block     ${alloc.block}`);
 const enabled = [
+  alloc.worker ? 'worker' : null,
   alloc.redis ? 'redis' : null,
   caps.storage ? 'r2' : null,
   caps.mail ? 'zoho-smtp' : null,

@@ -38,10 +38,10 @@ Surfaces are the fixed set every product is assembled from:
 | `mobile` | Flutter — learner mobile app |
 | `backend` | Go — the product API, same-origin at `/v1` |
 
-Alongside them, opted into per product: **Redis** for caching, rate limiting
-and pub/sub; **fasthttp websockets** for live chat; **LiveKit** for voice and
-video; **Cloudflare R2** for object storage; **Zoho SMTP** for transactional
-email.
+Alongside them, opted into per product: a **Go worker** over a Postgres job
+queue; **Redis** for caching, rate limiting and pub/sub; **fasthttp
+websockets** for live chat; **LiveKit** for voice and video; **Cloudflare R2**
+for object storage; **Zoho SMTP** for transactional email.
 
 `scripts/scaffold.mjs` allocates the product's block of ten development ports
 and its own PostgreSQL database, then writes everything the conventions decide

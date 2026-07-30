@@ -99,6 +99,30 @@ function indent(lines, spaces) {
   return lines.map((l) => `${pad}${l}`).join('\n');
 }
 
+// The worker shares the API's image context and its environment file — same
+// module, same config, different entrypoint. It gets NO Traefik labels: it
+// serves no HTTP, and a router would health-check a port nothing listens on.
+function workerService(slug, dataRoot) {
+  return [
+    `${slug}-worker:`,
+    `  build:`,
+    `    context: ${dataRoot}/src/backend`,
+    `    dockerfile: Dockerfile.worker`,
+    `  image: ${slug}/worker:latest`,
+    `  container_name: ${slug}-worker`,
+    `  restart: unless-stopped`,
+    `  env_file:`,
+    `    - ${dataRoot}/env/backend.env`,
+    `  environment:`,
+    `    ENVIRONMENT: production`,
+    `  networks:`,
+    `    - coolify`,
+    `  # Scaling this past one replica is safe: the queue claims with`,
+    `  # FOR UPDATE SKIP LOCKED, so replicas take different jobs rather than`,
+    `  # queueing behind each other.`,
+  ];
+}
+
 // Redis sits beside the application rather than in the Postgres stack: it is
 // a cache and a message bus, so losing it must be survivable, while losing
 // Postgres is not. Keeping them separate makes that difference operational
@@ -179,6 +203,10 @@ export function composeFile({ slug, alloc, rootDomain, dataRoot = `/data/${slug}
     }
 
     services.push(indent(lines, 2));
+  }
+
+  if (alloc.worker) {
+    services.push(indent(workerService(slug, dataRoot), 2));
   }
 
   if (alloc.redis) {

@@ -5,6 +5,7 @@ rule about tenancy that is the thing most worth getting right.
 
 | Concern | What we use |
 |---|---|
+| Background jobs | Postgres queue + a Go worker |
 | Cache, rate limiting, pub/sub | Redis 7 |
 | Live chat | fasthttp websocket + Redis pub/sub |
 | Live voice and video | LiveKit |
@@ -26,6 +27,96 @@ the same filename.
 
 This is why `cache.Key`, `realtime.RoomName` and `storage.Key` all take
 `tenantID` as their first argument and there is no variant that does not.
+
+## Background jobs
+
+`backend/cmd/worker` — a second entrypoint in the API's own Go module, not a
+service of its own. Same config, same packages, different `main`.
+
+**The queue is Postgres, not Redis.** Two reasons. The cache Redis runs with
+`allkeys-lru` and will silently evict a queued job under memory pressure — the
+failure is a notification that never arrives, with nothing in any log. And a
+job usually wants the same transaction as the row that caused it; only the
+database it lives in can offer that.
+
+```go
+tx, _ := pool.Begin(ctx)
+// ... write the row ...
+queue.Enqueue(ctx, tx, &tenantID, "invoice.email", payload, time.Now(), 5)
+tx.Commit(ctx)   // row and job commit together, or neither does
+```
+
+Enqueueing after the commit loses the job if the process dies in between.
+Before it, a rollback leaves a job for a row that does not exist.
+
+### Claiming
+
+```sql
+WHERE id = (
+  SELECT id FROM job_queue
+  WHERE status = 'pending' AND run_after <= now()
+  ORDER BY run_after
+  FOR UPDATE SKIP LOCKED
+  LIMIT 1
+)
+```
+
+`SKIP LOCKED` is the whole trick. Without it every worker queues behind the
+same row and the replicas serialise; with it they take different jobs and scale
+linearly. Scaling the worker past one replica is safe because of this line and
+nothing else.
+
+### Every handler must be idempotent
+
+Delivery is **at-least-once**. A worker that dies after doing the work but
+before marking it done will run the same job again when it is reaped. "Send the
+welcome email" run twice is two emails; "charge the card" run twice is a
+chargeback. Key the effect on something stable, or check before acting.
+
+### Reaping
+
+A process killed between claim and completion leaves a row stuck in `running`
+forever — nothing picks it up again, because the claim only looks at `pending`.
+The reaper requeues those after `claimTimeout`.
+
+That timeout **must exceed the longest handler**. Set it too low and a slow job
+is reaped while still running, and then runs twice concurrently.
+
+### Tenancy
+
+`job_queue` is the one table with **no RLS policy**, deliberately. The worker
+claims across all tenants with no tenant set; a policy there would make the
+claim return nothing and the queue would look permanently empty, with no error
+anywhere.
+
+Isolation moves one level in instead. For a job carrying a tenant, the runner
+opens a transaction, sets `app.tenant_id` on it, and hands the handler that
+transaction — so every query the handler makes through it is subject to the
+same policies a request would be. A handler that reaches for the pool instead
+escapes them.
+
+**`SET LOCAL`, never a session-level `set_config`.** A session setting applies
+to one pooled connection; the handler would draw a different one and run with
+no tenant, so tenant-scoped queries return nothing — which reads as a missing
+row, not a missing setting. Worse, that connection returns to the pool still
+carrying the tenant, and the next caller inherits it. `SET LOCAL` is discarded
+at commit or rollback and cannot outlive the job.
+
+System jobs (no tenant) get a nil transaction and use the pool. That is what
+keeps a slow external call — an SMTP handshake — from holding a transaction
+open for its duration.
+
+### Payloads
+
+A payload is persisted `jsonb`, so it is a wire format. Struct fields need JSON
+tags: renaming an untagged field strands every job already queued, and they
+decode to zero values rather than failing. Carry ids rather than copied rows —
+the row may have changed by the time the job runs, and the payload is the one
+thing that crosses without an RLS policy.
+
+Failures are kept, never deleted. A job that exhausts its attempts becomes
+`dead` with its last error. A queue that discards failures cannot tell you what
+stopped working.
 
 ## Redis
 
@@ -130,7 +221,13 @@ Zoho SMTP, over `net/smtp` from the standard library — no dependency.
 
 **Send from a job, never from a handler.** Zoho throttles, a handshake plus
 delivery routinely takes seconds, and a user waiting on a signup response
-should not also be waiting on someone else's mail server.
+should not also be waiting on someone else's mail server. Selecting email
+therefore selects the worker too — the `email.send` handler is registered for
+you.
+
+Enqueue `email.send` with a **nil tenant**, so the send does not hold a
+transaction open across the SMTP handshake. That makes the payload
+self-contained: render the message when enqueueing, not in the handler.
 
 Zoho specifics that are not guessable from the error:
 
