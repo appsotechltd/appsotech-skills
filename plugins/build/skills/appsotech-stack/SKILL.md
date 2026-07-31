@@ -153,7 +153,8 @@ decide before it. Nor to a decision already made, however it was reached.
 
 Route B: an existing product already has its allocation, its domain and its
 frozen design system. Read `docs/domain.md`, `design/design-system.md` and
-`docs/ports-and-databases.md` rather than regenerating any of them.
+`docs/ports-and-databases.md` rather than regenerating any of them, and check
+`docs/specs/` for a spec covering the feature being asked for.
 
 ## Phase 1 — Scope *(Route A)*
 
@@ -244,9 +245,15 @@ change the direct `require` block.
 **If `docs/domain.md` exists, read it and use it**, and ask only about what it
 leaves open. Re-interrogating someone about entities they wrote down last week
 is the same failure as regenerating a frozen palette. Read any brief,
-one-pager or spec in `docs/` first for the same reason — a brief settles what
-the product is and who it is for, which shortens this phase without replacing
-it.
+one-pager or spec in `docs/` and `docs/specs/` first, for the same reason.
+
+Upstream documents settle **part of what follows, and it is worth knowing which
+part.** A spec's user stories, grouped by persona, are the actor list; its
+acceptance criteria are the one workflow. A brainstorm gives a direction and a
+riskiest assumption, which is less. Neither says what owns what, what cascades
+on delete, or what "one organisation" means — no product document does, because
+those are decisions about data. **Never infer a schema from a PRD**: take the
+actors and the workflow from it, and ask about the rest.
 
 Find out what the product actually does. One focused round, then build.
 
@@ -257,10 +264,7 @@ Find out what the product actually does. One focused round, then build.
 - **The tenant boundary** — what "one organisation" means here.
 - **The one workflow that matters most** — build it end to end first.
 
-Write the answers to `docs/domain.md` before writing code. These four are
-design decisions about data, not product strategy: an upstream brainstorm
-produces a direction and a riskiest assumption, and none of that tells you what
-cascades on delete.
+Write the answers to `docs/domain.md` before writing code.
 
 ## Phase 5 — Design: select
 
@@ -347,12 +351,11 @@ rather than merely stated:
 node "$FREEZE" design/tokens.css design/design-system.md --record
 ```
 
-That writes a fingerprint of the palette into `design-system.md`. From then on
-the gate answers one question every run: does `tokens.css` still hold the
-palette this document describes? A silent token edit leaves the rationale
-explaining colours that are no longer there, and the next session inherits an
-argument for a design it cannot see. **Re-record only alongside a restyle the
-user actually asked for** — never to make a red gate go green.
+That fingerprints the palette into `design-system.md`, so the gate can ask one
+question every run: does `tokens.css` still hold the palette this document
+describes? A silent edit otherwise leaves the rationale explaining colours that
+are gone. **Re-record only alongside a restyle the user asked for** — never to
+turn a red gate green.
 
 **No palette values inline in markup, ever.**
 
@@ -385,7 +388,11 @@ is done when a real user action reaches Postgres and comes back.
 5. **API client and screens** — typed client, TanStack Query hooks, then the
    screens, styled from the tokens
 6. **Component tests** — Vitest + Testing Library; one Playwright spec for the
-   workflow named in Phase 4
+   workflow named in Phase 4. **If a spec supplied acceptance criteria, they
+   are the test cases** — Given/When/Then maps onto a Playwright step and a Go
+   table row one for one, including the error and edge cases it listed.
+   Inventing a parallel set leaves the written criteria unverified while the
+   suite looks thorough.
 
 Three rules apply to every feature:
 
@@ -422,20 +429,18 @@ Do not report anything as built on the strength of having written it.
 | Compose | `docker compose -f deploy/<slug>.compose.yml config` |
 | **Design, all of it** | `node "$GATE" --serve apps/<surface>/dist` |
 
-`gate.mjs` finds `design/tokens.css`, `design/design-system.md`, the Flutter
-token copy and every `apps/*/src` by convention, so only a rendered target has
-to be named — a static build with `--serve`, or `--url` for a Next.js surface
-after `npm run start`. It runs contrast, the freeze check, the `tokens.dart`
-drift check, the markup audit and the rendered checks, and prints one summary.
+`gate.mjs` finds `design/`, the Flutter token copy and every `apps/*/src` by
+convention, so only a rendered target needs naming — `--serve` for a static
+build, `--url` for a Next.js surface after `npm run start`. It runs contrast,
+the freeze check, the `tokens.dart` drift check, the markup audit and the
+rendered checks, and prints one summary.
 
-**A step it could not run is reported `SKIP`, never counted as a pass**, and
-the run says so again at the end. That is the whole reason it exists: nine
-separate commands get run as six, and the three nobody ran look like silence
-rather than absence.
+**A step it could not run reports `SKIP` and is never counted as a pass**, said
+again at the end. That is why it exists: nine separate commands get run as six,
+and the three nobody ran look like silence rather than absence.
 
 The individual scripts still work and are worth reaching for while fixing one
-thing — `node "$CONTRAST" design/tokens.css`, `node "$AUDIT" apps/<surface>/src`,
-`node "$RESPONSIVE" --serve <dir>`.
+thing — `$CONTRAST`, `$AUDIT`, `$RESPONSIVE`.
 
 **Any surface under `apps/` is a UI surface, so the design rows apply.** If
 `design/tokens.css` does not exist, Phases 5–6 never ran — do them before

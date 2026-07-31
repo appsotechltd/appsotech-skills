@@ -48,6 +48,14 @@ every phase, an existing one skips allocation, and a standalone screen or
 single-file prototype skips the scaffolding entirely and goes straight to
 design. Asking for a mockup never produces a port block and a Coolify stack.
 
+Upstream documents are read rather than re-elicited, and the skill is specific
+about how far they go: a spec's user stories are the actor list and its
+acceptance criteria are the primary workflow — which then become the Playwright
+spec and the Go table rows rather than a parallel set nobody wrote down. What
+no product document ever settles is what owns what, what cascades on delete, or
+what one organisation means, so those are still asked. Inferring a schema from
+a PRD is called out explicitly as the thing not to do.
+
 The fourth route is **not this skill**. The description is deliberately pushy
 about triggering, so it will fire on "let's build a marketplace" from someone
 who wanted to think rather than to ship — and Phases 1–2 commit a slug that
