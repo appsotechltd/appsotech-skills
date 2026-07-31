@@ -78,7 +78,12 @@ if (isMain) {
   const tokens = flag('--tokens', join('design', 'tokens.css'));
   const system = flag('--system', join('design', 'design-system.md'));
   const dart = flag('--dart', join('apps', 'mobile', 'lib', 'design', 'tokens.dart'));
-  const domain = flag('--domain', join('docs', 'domain.md'));
+  // Opt-in, and deliberately not defaulted. A domain file is a stack concept —
+  // entities, actors, the tenant boundary — and a design-only project has none
+  // and never will. Defaulting it would make every solo run report a permanent
+  // SKIP for a file that was never meant to exist, which is how a real warning
+  // gets trained into background noise.
+  const domain = flag('--domain', null);
   const serveDir = flag('--serve');
   const url = flag('--url');
   const srcArg = flag('--src');
@@ -87,19 +92,21 @@ if (isMain) {
   const add = (name, target, result) => steps.push({ name, target, ...result });
   const skip = (name, target, why) => steps.push({ name, target, status: SKIP, output: why });
 
-  // 0. Was the domain ever written down?
+  // 0. Was the domain ever written down? Only when asked for.
   //
-  // Phase 9 says a phase that was skipped is said plainly, not omitted — and
-  // until this, a project whose domain lives only in a chat transcript passed
-  // the gate in silence. This asserts a file exists and nothing more: whether
-  // its contents are any good, and whether the spec's acceptance criteria
-  // honestly became tests, are judgement calls that stay human.
-  if (existsSync(domain)) {
-    add('domain', domain, { status: PASS, code: 0, output: 'recorded' });
-  } else {
-    skip('domain', domain,
-      'the domain was never written down — Phase 4 produced no file, so the ' +
-      'next session inherits nothing');
+  // A skipped step is said plainly rather than omitted — and until this, a
+  // project whose domain lived only in a chat transcript passed in silence.
+  // It asserts a file exists and nothing more: whether the contents are any
+  // good, and whether a spec's acceptance criteria honestly became tests, are
+  // judgement calls that stay human.
+  if (domain) {
+    if (existsSync(domain)) {
+      add('domain', domain, { status: PASS, code: 0, output: 'recorded' });
+    } else {
+      skip('domain', domain,
+        'the domain was never written down, so the next session inherits ' +
+        'nothing — a chat transcript does not survive');
+    }
   }
 
   // 1. The tokens themselves.

@@ -4,22 +4,21 @@ description: >
   Build applications on the Appsotech house stack — Go API (fasthttp, pgx/v5),
   Next.js public surfaces, React + Vite surfaces behind auth, Flutter mobile,
   PostgreSQL, Redis, R2 storage, Zoho SMTP, LiveKit calls, websocket chat,
-  Coolify deploy — and design them to a frozen, accessibility-gated design
-  system. Use when starting a new project or product; adding a surface,
-  feature or API to an existing one; or building, designing, styling or
-  laying out any UI — a screen, page, dashboard, landing page, form,
-  component, admin panel, mobile screen, or a single-file HTML prototype.
-  Fires on "start a new project", "build me a screen", "make a prototype",
-  "put a UI on this" and "make it look good" — not only on "design" or
-  "scaffold". The stack, layout, ports and deployment are already decided:
-  never ask what to build them with.
+  Coolify deploy. Use when starting a new project or product; scaffolding a
+  repository; adding a surface, feature or API to an existing one; allocating
+  ports or databases; or deploying. Fires on "start a new project", "add a
+  feature", "scaffold this", "build the API" and "deploy it". The stack,
+  layout, ports and deployment are already decided: never ask what to build
+  them with. Design and UI work is delegated to `appsotech-design`, which this
+  skill reads at Phase 5 — a run that starts here still covers both.
 ---
 
 # Appsotech stack
 
-One skill, two halves. **How it is wired** — surfaces, ports, database, API,
-deploy — and **how it looks** — style, tokens, accessibility. Load this at the
-start of a project and it covers both.
+**How it is wired** — surfaces, ports, database, API, deploy. How it *looks*
+is `appsotech-design`, which this skill reads at Phase 5, so starting a project
+here still covers both halves. Loading the design skill alone is also fine, and
+is the right move when there is no stack to scaffold.
 
 **The stack is not a question.** Everything below is already decided and is not
 re-litigated at the start of a run.
@@ -38,91 +37,58 @@ re-litigated at the start of a run.
 | Object storage | Cloudflare R2, via the S3 API |
 | Transactional email | Zoho SMTP |
 | Deploy | Coolify — Docker Compose behind Traefik, the only ingress |
-| Design | pro-max generates style; elite owns tokens and the accessibility floor |
+| Design | `appsotech-design` — pro-max generates style, elite owns tokens and the floor |
 | Tests | Go `testing`, Vitest + Testing Library, Playwright, `flutter_test` |
 
 If the operator asks for something outside this — a Rails API, a Vue frontend —
 build what they asked for and say once that it departs from the house stack.
 Do not silently substitute.
 
-## Design authority
+## Design — delegated, never restated
 
-Two sources, and they do not overlap: **pro-max generates, elite verifies.**
-pro-max proposes taste; elite owns structure and the accessibility floor and
-has the last word.
-
-| Decision | Authority |
-|---|---|
-| Style direction, palette values, font pairing | **pro-max**, filtered through elite |
-| Token architecture and naming (`--background`, `--primary`, dark mode) | **elite** — pro-max supplies values *into* this scheme |
-| Type scale, line-height, 45–75ch measure, max 2–3 typefaces | **elite** |
-| Spacing scale and section rhythm | **elite** |
-| Motion — whether to animate at all, duration, easing, gestures | **elite's constraints + `references/motion.md`'s craft bar** — pro-max's GSAP presets are filtered through both |
-| Hero treatment — particles, 3D, image or type alone, and its budget | **`references/hero.md`** — the only place decorative motion and 3D are allowed |
-| Accessibility floor — 4.5:1 text, 3:1 focus ring, 44×44px targets, labelled inputs | **elite, non-negotiable** |
-| Responsive across mobile, tablet and desktop | **elite, non-negotiable** |
-| Light *and* dark mode on every surface | **elite, non-negotiable** |
-
-"Filtered through elite" means three vetoes applied before anything is frozen:
-pro-max palettes are **not** contrast-safe and are checked; Inter, Roboto and
-Arial are never display faces whatever pro-max returns; GSAP presets that
-animate layout properties are rewritten or dropped. A style choice never wins
-against the accessibility floor — if a palette cannot meet 4.5:1, the palette
-changes.
-
-## The frozen design rule
-
-**If `design/design-system.md` exists, read it and use it. Do not re-run
-selection.**
-
-Sessions start fresh and remote: nothing outside the repository survives.
-Re-running selection means pro-max reasons from scratch and returns a different
-palette and different fonts for the same repo — a product with a new aesthetic
-every Tuesday.
-
-Re-selection happens **only** when the user asks in so many words ("restyle",
-"pick a new palette"). Never inferred from "make this look better", never
-triggered by a new surface.
-
-| File | Role | Changes when |
-|---|---|---|
-| `design/design-system.md` | Master — style, palette, fonts, rationale | explicit re-selection only |
-| `design/tokens.css` | The tokens, elite's naming | regenerated from the Master |
-| `apps/mobile/lib/design/tokens.dart` | Same values for Flutter, **generated** | `node "$TOKENSDART"` — never by hand |
-| `design/overrides.md` | Per-surface deviations | normal work |
-
-Tokens are **per product, not per surface**. `webapp` and `admin-web` share one
-system, or the same product looks like two.
+Everything about how it *looks* lives in **`appsotech-design`**: the precedence
+table (pro-max generates, elite verifies), the frozen design rule, tokens,
+patterns, motion, hero treatments and the gate. None of it is repeated here.
+Two copies of a precedence table is how the two copies come to disagree, and
+the one thing worse than an unenforced rule is two versions of it.
 
 ## Paths
 
 Two roots, and confusing them breaks the gate. **`design/…`, `apps/…`,
 `backend/…`** are relative to the **target project**. **`scripts/…` and
-`references/…`** are relative to **this skill's own directory**.
+`references/…`** are relative to a skill's own directory.
 
 The working directory during a run is the target project, so a bare
-`node scripts/contrast.mjs` never resolves. Resolve once, up front:
+`node scripts/scaffold.mjs` never resolves. Resolve both skills up front:
 
 ```bash
 for base in \
   "$CLAUDE_PLUGIN_ROOT/skills/appsotech-stack/scripts" \
   "$HOME/.claude/skills/appsotech-stack/scripts" \
   ".claude/skills/appsotech-stack/scripts"; do
-  [ -f "$base/contrast.mjs" ] && SCRIPTS="$base" && break
+  [ -f "$base/scaffold.mjs" ] && SCRIPTS="$base" && break
 done
-GATE="$SCRIPTS/gate.mjs"
-CONTRAST="$SCRIPTS/contrast.mjs"
-AUDIT="$SCRIPTS/audit-markup.mjs"
-RESPONSIVE="$SCRIPTS/responsive-check.mjs"
-TOKENSDART="$SCRIPTS/tokens-dart.mjs"
-FREEZE="$SCRIPTS/freeze-check.mjs"
 SCAFFOLD="$SCRIPTS/scaffold.mjs"
-echo "${SCRIPTS:-NOT FOUND}"
+
+for base in \
+  "$CLAUDE_PLUGIN_ROOT/skills/appsotech-design" \
+  "$HOME/.claude/skills/appsotech-design" \
+  ".claude/skills/appsotech-design"; do
+  [ -f "$base/SKILL.md" ] && DESIGN="$base" && break
+done
+GATE="$DESIGN/scripts/gate.mjs"
+echo "stack ${SCRIPTS:-NOT FOUND} / design ${DESIGN:-NOT FOUND}"
 ```
 
-If it did not resolve, say so and fall back to checking by hand against
-`references/design-tokens.md` and `references/design-gate.md` — do not skip the
-checks silently.
+**Read `$DESIGN/SKILL.md` before Phase 5** and follow it for Phases 5–7's
+design work. The two ship together in the `build` plugin, so a plugin install
+has both; a copy install needs both folders.
+
+If `$DESIGN` did not resolve, **say so and stop the design phases** rather than
+improvising a palette from memory. Scaffolding and backend work carry on
+regardless — those do not depend on it. An ungated design system invented on
+the spot is the exact thing this repo exists to prevent, and it is better to
+report the skill as missing than to produce one that looks finished.
 
 ---
 
@@ -266,98 +232,23 @@ Find out what the product actually does. One focused round, then build.
 
 Write the answers to `docs/domain.md` before writing code.
 
-## Phase 5 — Design: select
+## Phases 5 and 6 — Design: select and freeze
 
-**Skip entirely if `design/design-system.md` exists.** Read it and go to
-Phase 6.
+**`appsotech-design` owns both.** Read `$DESIGN/SKILL.md` and follow its
+Phases 1 and 2: engine resolution in three tiers, the four selection questions,
+then `design/tokens.css`, `design/design-system.md`, the contrast gate and the
+freeze fingerprint.
 
-Resolve the design engine (below), then read `references/design-phase.md`. It
-carries the questions to answer before querying anything — who uses this, what
-single action they should take, and what one thing they will remember — plus
-the exact query forms.
+Two things this skill contributes, because they are stack facts rather than
+design ones:
 
-Ask for four things in order: **product type**, **style direction**,
-**palette**, **font pairing**. Selection happens **before any markup exists**;
-choosing a palette after the components are built is where hardcoded hex comes
-from.
+- The Flutter token copy belongs at `apps/mobile/lib/design/tokens.dart`, since
+  that is where this layout puts the Flutter package.
+- Tokens are **per product, not per surface**. `webapp` and `admin-web` share
+  one system, or the same product looks like two.
 
-### Resolving the design engine
-
-Guard on Python — pro-max is a Python script:
-
-```bash
-python3 --version || echo "NO PYTHON"
-
-for p in \
-  ".claude/skills/ui-ux-pro-max/scripts/search.py" \
-  "$HOME/.claude/plugins/"*"/ui-ux-pro-max/.claude/skills/ui-ux-pro-max/scripts/search.py" \
-  "$HOME/.claude/skills/ui-ux-pro-max/scripts/search.py"; do
-  [ -f "$p" ] && SEARCH="$p" && break
-done
-```
-
-`$CLAUDE_PLUGIN_ROOT` is deliberately absent from that list: it resolves to
-*this* plugin, never pro-max's, so it can only produce a false negative.
-
-| Tier | Condition | Action |
-|---|---|---|
-| 1 | Script found | Query it with `--json`. Deterministic, preferred. |
-| 2 | Not found, skill installed | Invoke `ui-ux-pro-max` by name; ask for style, palette, font pairing. |
-| 3 | Neither, or no Python | Read `references/style-directions.md`, proceed, and **tell the user** the engine was unavailable. |
-
-**Never fail the build over this.** Only style *breadth* degrades — 84 styles
-down to 12 curated directions. Tokens, the accessibility floor, the patterns
-and the gate are vendored and identical in all three tiers.
-
-## Phase 6 — Design: freeze
-
-Read `references/design-tokens.md`, then write:
-
-- `design/tokens.css` — pro-max's values in **elite's naming scheme**, light
-  and dark blocks, both required
-- `design/design-system.md` — style, palette, fonts and *why*, so the next
-  session inherits the reasoning and not just the values. If the product has
-  public surfaces, this is also where the **hero form** is recorded — the one
-  abstract shape derived from what the product does, per `references/hero.md`.
-  Unrecorded, the next session invents a different one, which is the palette
-  drift problem wearing a different hat.
-- `apps/mobile/lib/design/tokens.dart` — **only if there is a Flutter
-  surface**, and never by hand:
-
-  ```
-  node "$TOKENSDART" design/tokens.css -o apps/mobile/lib/design/tokens.dart
-  ```
-
-  It lives inside the Flutter package because Dart resolves library code
-  relative to `lib/` — a file at the repository root is not importable from
-  `apps/mobile`. The `design/` segment in the path is also what keeps the
-  markup audit's hardcoded-colour rule off it, which is right: this is the one
-  place raw colour belongs on the Flutter side.
-
-Then gate it before committing:
-
-```
-node "$CONTRAST" design/tokens.css
-```
-
-Non-zero exit means a pair is below the floor. **Fix the token and re-run.**
-Catching this here costs one token; catching it in Phase 9 costs an audit of
-every component that consumed it.
-
-Then record the freeze, which is what makes the frozen design rule checkable
-rather than merely stated:
-
-```
-node "$FREEZE" design/tokens.css design/design-system.md --record
-```
-
-That fingerprints the palette into `design-system.md`, so the gate can ask one
-question every run: does `tokens.css` still hold the palette this document
-describes? A silent edit otherwise leaves the rationale explaining colours that
-are gone. **Re-record only alongside a restyle the user asked for** — never to
-turn a red gate green.
-
-**No palette values inline in markup, ever.**
+**Skip both phases entirely if `design/design-system.md` exists.** Read it and
+go to Phase 7.
 
 ## Phase 7 — Build
 
@@ -366,11 +257,11 @@ Read `references/backend-go.md`, `references/web-surfaces.md` and
 
 | Reference | When |
 |---|---|
-| `references/patterns-web.md` | a dashboard, landing page or Tailwind/React component |
+| `$DESIGN/references/patterns-web.md` | a dashboard, landing page or Tailwind/React component |
 | `references/mobile-flutter.md` | Flutter — how the app is wired: API client, auth, offline |
-| `references/patterns-mobile.md` | Flutter — how it looks: `ThemeData`, light/dark, responsive |
-| `references/motion.md` | anything animates — and *before* adding motion, since its first rule is whether to animate at all |
-| `references/hero.md` | a hero section on `platform-web` or `tenant-web` — particles, 3D, a full-screen treatment or a hero image |
+| `$DESIGN/references/patterns-mobile.md` | Flutter — how it looks: `ThemeData`, light/dark, responsive |
+| `$DESIGN/references/motion.md` | anything animates — and *before* adding motion, since its first rule is whether to animate at all |
+| `$DESIGN/references/hero.md` | a hero section on `platform-web` or `tenant-web` — particles, 3D, a full-screen treatment or a hero image |
 | `references/services.md` | the product took jobs, caching, chat, calls, storage or email |
 
 The two Flutter files are deliberately separate and both apply: one is
@@ -427,20 +318,21 @@ Do not report anything as built on the strength of having written it.
 | Vite | `npm run build && npm run type-check && npm run test` |
 | Flutter | `flutter analyze && flutter test` |
 | Compose | `docker compose -f deploy/<slug>.compose.yml config` |
-| **Design, all of it** | `node "$GATE" --serve apps/<surface>/dist` |
+| **Design, all of it** | `node "$GATE" --domain docs/domain.md --serve apps/<surface>/dist` |
 
 `gate.mjs` finds `design/`, the Flutter token copy and every `apps/*/src` by
 convention, so only a rendered target needs naming — `--serve` for a static
-build, `--url` for a Next.js surface after `npm run start`. It runs contrast,
-the freeze check, the `tokens.dart` drift check, the markup audit and the
-rendered checks, and prints one summary.
+build, `--url` for a Next.js surface after `npm run start`. `--domain` is
+passed here because `docs/domain.md` is a stack artefact: the design skill does
+not default it, since a design-only project has none and a permanent SKIP for a
+file nobody meant to write is how a warning becomes noise.
 
 **A step it could not run reports `SKIP` and is never counted as a pass**, said
 again at the end. That is why it exists: nine separate commands get run as six,
 and the three nobody ran look like silence rather than absence.
 
-The individual scripts still work and are worth reaching for while fixing one
-thing — `$CONTRAST`, `$AUDIT`, `$RESPONSIVE`.
+The individual scripts live in `$DESIGN/scripts/` and are worth reaching for
+while fixing one thing.
 
 **Any surface under `apps/` is a UI surface, so the design rows apply.** If
 `design/tokens.css` does not exist, Phases 5–6 never ran — do them before
@@ -452,9 +344,9 @@ Next.js surface builds to `.next/` and needs its own server. `apps/mobile` is a
 human pass: `flutter analyze` covers the code, and layout at the largest OS
 text scale and in landscape does not automate.
 
-Then walk `references/design-gate.md` end to end. The scripts cover the items
-marked `[auto]`; the rest are judgement calls — whether the tablet layout is
-designed or merely fits, whether dark mode was designed or inverted, whether
+Then walk `$DESIGN/references/design-gate.md` end to end. The scripts cover the
+items marked `[auto]`; the rest are judgement calls — whether the tablet layout
+is designed or merely fits, whether dark mode was designed or inverted, whether
 the memorable element survived into the code.
 
 Report what passed, what failed with its output, and anything left unbuilt. A
@@ -466,22 +358,11 @@ the next one.
 
 ## No filesystem — the claude.ai chat case
 
-No repository, no shell, no persistence. This is **Route C by definition**, and
-four phases run differently.
-
-| Phase | In chat |
-|---|---|
-| 0 | Route C. There is no project to scaffold. |
-| 5 | No Python, so **tier 3 by definition**. Use `references/style-directions.md` and say the range was the twelve. |
-| 6 | Nothing to write to. Put the `:root` and `.dark` blocks **at the top of the artefact**, and paste the summary into the reply so the user can commit it. |
-| 9 | The scripts cannot run. Walk the checklist by hand — the palettes in `style-directions.md` are pre-verified so the numbers need not be recomputed. |
-
-**The frozen design rule still applies, with the user as the store.** Ask
-whether a palette already exists before selecting. A user who pastes their
-tokens in has frozen them, and re-selecting over the top is the same drift
-arriving by a different route.
-
-Never invent a palette when `style-directions.md` covers the case.
+No repository, no shell, no persistence, so there is nothing here to scaffold:
+this is **Route C by definition** and the work is entirely `appsotech-design`'s.
+Its own chat section covers the three phases that run differently, including
+the rule that matters most — the frozen design rule still applies with the user
+as the store, so ask whether a palette already exists before selecting one.
 
 ## Boundary
 
@@ -500,8 +381,6 @@ nothing. It has to land in `docs/`, or Phase 4 will ask again and be right to.
 
 ## Attribution
 
-`references/design-tokens.md`, `patterns-web.md`, `design-gate.md` and the
-direction list in `style-directions.md` are vendored from the
-**elite-frontend-ux** skill and reorganised by phase. `ui-ux-pro-max` is *not*
-vendored — it is queried where installed, and is MIT licensed,
-© Next Level Builder, github.com/nextlevelbuilder/ui-ux-pro-max-skill.
+Nothing third-party is vendored here. `appsotech-design` carries the vendored
+**elite-frontend-ux** material and the attribution for it, for
+**emilkowalski/skills**, and for `ui-ux-pro-max`.

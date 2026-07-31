@@ -31,11 +31,12 @@ can be passed directly instead.
 Playwright is absent the rendered checks skip; that is a gap in the run, not a
 clean bill of health, and the summary repeats it at the end.
 
-It also reports whether `docs/domain.md` exists at all, since a domain living
-only in a chat transcript is one a cloud session inherits nothing from. That
-step asserts existence and nothing else — whether the notes are any good, and
-whether a spec's acceptance criteria honestly became tests, stay human checks.
-Automating those badly would turn a real judgement into a green tick.
+Given `--domain <path>` it also reports whether that file exists, since a
+domain living only in a chat transcript is one a cloud session inherits nothing
+from. It is opt-in because a design-only project has no domain file and never
+will. The step asserts existence and nothing else — whether the notes are any
+good, and whether a spec's acceptance criteria honestly became tests, stay
+human checks. Automating those badly would turn a judgement into a green tick.
 
 Between them these cover the checklist items marked **[auto]** below. Everything
 else needs a human pass — and those are not leftovers, they are the judgement

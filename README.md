@@ -12,19 +12,25 @@ Skills for Claude Code, published by Appsotech Limited.
 
     cp -r plugins/audit/skills/appsotech-audit ~/.claude/skills/
     cp -r plugins/build/skills/appsotech-stack ~/.claude/skills/
+    cp -r plugins/build/skills/appsotech-design ~/.claude/skills/
+
+`appsotech-stack` reads `appsotech-design` at its design phases, so copy both
+if you want a whole project covered. `appsotech-design` on its own is a
+complete skill and needs nothing else.
 
 On Windows (PowerShell):
 
     Copy-Item -Recurse plugins\audit\skills\appsotech-audit $HOME\.claude\skills\
     Copy-Item -Recurse plugins\build\skills\appsotech-stack $HOME\.claude\skills\
+    Copy-Item -Recurse plugins\build\skills\appsotech-design $HOME\.claude\skills\
 
 ## Skills
 
 ### `appsotech-stack`
 
-**One skill for a whole project** — how it is wired, and how it looks. Load it
-at the start and it covers the stack, the scaffold, the design system and the
-gate.
+**How a project is wired** — surfaces, ports, database, API, deploy. Load it at
+the start of a project and it covers the scaffold and, by reading
+`appsotech-design` at its design phases, the look as well.
 
 The stack, directory layout, port allocation and deployment are already
 decided; a run never asks what to build things with. It asks two things: which
@@ -38,6 +44,14 @@ surfaces to build (a checklist), and what the product does.
 | `admin-web` | React + Vite — operator console across all tenants |
 | `mobile` | Flutter — learner mobile app |
 | `backend` | Go — the product API, same-origin at `/v1` |
+
+`scripts/scaffold.mjs` allocates the product's block of ten development ports
+and its own PostgreSQL database, then writes everything the conventions decide
+by themselves — manifests, TypeScript configs, Dockerfiles, the RFC 7807 error
+envelope, CORS and tenant middleware, health and readiness routes, and the
+Coolify compose stack with every surface routed. It never overwrites an
+existing file, so a second run over a product is safe. Domain code is not
+scaffolded: that is the feature phase, built one vertical slice at a time.
 
 Opted into per product: a **Go worker** over a Postgres job queue; **Redis**
 for caching, rate limiting and pub/sub; **fasthttp websockets** for live chat;
@@ -66,7 +80,18 @@ scaffolding to avoid an awkward pause. A throwaway screen made to think against
 is not that case — that is a prototype, and prototypes are instruments of
 deciding.
 
-### Design
+### `appsotech-design`
+
+**How it looks**, on its own terms. A separate skill because design work far
+outnumbers scaffolding work: most sessions are a screen, a component, a
+restyle or a gate run on a repository that was scaffolded months ago, and none
+of that should have to load a Go and Coolify manual to get at a palette. It is
+stack-agnostic — React, Next.js, Vue, Svelte, Flutter, plain HTML or a single
+file — so it also works on projects that are not on the house stack at all.
+
+The two are split so that nothing is duplicated: `appsotech-stack` resolves the
+design skill by path and reads it, rather than carrying its own copy of the
+precedence table. Two copies of a rule is how the two copies come to disagree.
 
 Two authorities that do not overlap: [`ui-ux-pro-max`][promax] generates style,
 palette and font pairing; the vendored `elite-frontend-ux` owns token
@@ -105,7 +130,7 @@ filesystem still produces a compliant, tokenised interface.
 
 ### The gate
 
-Seven scripts make it mechanical rather than aspirational; **26 checklist items
+Six scripts make it mechanical rather than aspirational; **26 checklist items
 are marked `[auto]`**, and the rest stay human because they are judgement
 calls, not leftovers.
 
@@ -114,14 +139,6 @@ and every `apps/*/src` from the conventions, so only a rendered target has to be
 named. A step it could not run prints `SKIP` and is never folded into the pass
 count — a partial run reported as a clean one is worse than no gate, because it
 is believed.
-
-`scripts/scaffold.mjs` allocates the product's block of ten development ports
-and its own PostgreSQL database, then writes everything the conventions decide
-by themselves — manifests, TypeScript configs, Dockerfiles, the RFC 7807 error
-envelope, CORS and tenant middleware, health and readiness routes, and the
-Coolify compose stack with every surface routed. It never overwrites an
-existing file, so a second run over a product is safe. Domain code is not
-scaffolded: that is the feature phase, built one vertical slice at a time.
 
 `scripts/contrast.mjs` gates the palette at freeze time rather than at review.
 pro-max palettes are not contrast-safe — its own CRM palette pairs `#FFFFFF` on

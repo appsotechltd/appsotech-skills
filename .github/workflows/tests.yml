@@ -56,7 +56,7 @@ jobs:
       - name: Assert Playwright is resolvable
         run: |
           node -e '
-            import("./plugins/build/skills/appsotech-stack/scripts/responsive-check.mjs")
+            import("./plugins/build/skills/appsotech-design/scripts/responsive-check.mjs")
               .then(({ resolvePlaywright }) => {
                 const p = resolvePlaywright(".");
                 if (!p) { console.error("Playwright did not resolve — browser tests would skip."); process.exit(1); }
@@ -69,6 +69,9 @@ jobs:
 
       - name: appsotech-stack
         run: node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
+
+      - name: appsotech-design
+        run: node --test plugins/build/skills/appsotech-design/tests/*.test.mjs
 
   # Timing assertions only fail some of the time. One green run says nothing
   # about a test whose margin is 1.0x; five in a row say rather more.
@@ -91,5 +94,6 @@ jobs:
             echo "::group::run $i"
             node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs || exit 1
             node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs || exit 1
+            node --test plugins/build/skills/appsotech-design/tests/*.test.mjs || exit 1
             echo "::endgroup::"
           done

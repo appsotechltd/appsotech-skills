@@ -76,7 +76,7 @@ test('a project with no apps/ yields no surfaces rather than throwing', () => {
 test('a clean project passes, with the un-runnable steps marked SKIP', () => {
   const dir = project();
   record(dir);
-  const res = run(dir);
+  const res = run(dir, ['--domain', join('docs', 'domain.md')]);
   assert.equal(res.status, 0, res.stdout);
   assert.match(res.stdout, /PASS {2}domain/);
   assert.match(res.stdout, /PASS {2}contrast/);
@@ -91,7 +91,7 @@ test('skips are never counted as passes, and are called out every run', () => {
   // is worse than no gate, because it is believed.
   const dir = project();
   record(dir);
-  const out = run(dir).stdout;
+  const out = run(dir, ['--domain', join('docs', 'domain.md')]).stdout;
   assert.match(out, /4 passed, 0 failed, 2 skipped/);
   assert.match(out, /did not run\. They are not passes/);
 });
@@ -157,7 +157,7 @@ test('a domain that was never written down is surfaced, not passed over', () => 
   // transcript.
   const dir = project({ domain: false });
   record(dir);
-  const res = run(dir);
+  const res = run(dir, ['--domain', join('docs', 'domain.md')]);
   assert.match(res.stdout, /SKIP {2}domain/);
   assert.match(res.stdout, /never written down/);
   // A missing domain is a gap in the record, not a broken build. It reports
@@ -172,5 +172,16 @@ test('the domain step asserts existence only, never contents', () => {
   const dir = project();
   writeFileSync(join(dir, 'docs', 'domain.md'), 'tbd\n');
   record(dir);
-  assert.match(run(dir).stdout, /PASS {2}domain/);
+  assert.match(run(dir, ['--domain', join('docs', 'domain.md')]).stdout, /PASS {2}domain/);
+});
+
+test('without --domain there is no domain step at all', () => {
+  // A design-only project has no docs/domain.md and never will. Defaulting the
+  // path would print a permanent SKIP for a file nobody intended to write,
+  // which is how a real warning gets trained into background noise.
+  const dir = project({ domain: false });
+  record(dir);
+  const out = run(dir).stdout;
+  assert.doesNotMatch(out, /domain/);
+  assert.match(out, /3 passed, 0 failed, 2 skipped/);
 });
