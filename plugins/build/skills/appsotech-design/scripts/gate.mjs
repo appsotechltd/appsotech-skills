@@ -50,6 +50,52 @@ export function surfaceDirs(root = '.') {
   return out;
 }
 
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'build', 'dist', '.next', '.dart_tool', 'ios',
+  'android', 'Pods', 'vendor', '.svelte-kit', 'coverage',
+]);
+
+// Finds every generated Flutter token file, wherever the package sits.
+//
+// A hardcoded apps/mobile/… default was worse than useless on a project laid
+// out any other way: it reported "no Flutter surface" for a project that HAS
+// one, so the drift check silently skipped a file that existed while asserting
+// something false. Discovery makes the message true in all three cases.
+export function flutterTokenFiles(root = '.', depth = 4) {
+  const out = [];
+  const walk = (dir, left) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith('.')) continue;
+      const sub = join(dir, e.name);
+      const candidate = join(sub, 'lib', 'design', 'tokens.dart');
+      if (existsSync(candidate)) out.push(candidate);
+      if (left > 0) walk(sub, left - 1);
+    }
+  };
+  const here = join(root, 'lib', 'design', 'tokens.dart');
+  if (existsSync(here)) out.push(here);
+  walk(root, depth);
+  return [...new Set(out)].sort();
+}
+
+// A Flutter package is here even when nobody generated its tokens — that is a
+// finding rather than an absence, and the two must not read the same.
+export function hasFlutterPackage(root = '.', depth = 4) {
+  const walk = (dir, left) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+    if (existsSync(join(dir, 'pubspec.yaml'))) return true;
+    for (const e of entries) {
+      if (!e.isDirectory() || SKIP_DIRS.has(e.name) || e.name.startsWith('.')) continue;
+      if (left > 0 && walk(join(dir, e.name), left - 1)) return true;
+    }
+    return false;
+  };
+  return walk(root, depth);
+}
+
 function run(name, args, opts = {}) {
   const res = spawnSync(process.execPath, [script(name), ...args], {
     encoding: 'utf8', timeout: opts.timeout ?? 180_000,
@@ -77,7 +123,7 @@ if (isMain) {
 
   const tokens = flag('--tokens', join('design', 'tokens.css'));
   const system = flag('--system', join('design', 'design-system.md'));
-  const dart = flag('--dart', join('apps', 'mobile', 'lib', 'design', 'tokens.dart'));
+  const dart = flag('--dart', null);
   // Opt-in, and deliberately not defaulted. A domain file is a stack concept —
   // entities, actors, the tenant boundary — and a design-only project has none
   // and never will. Defaulting it would make every solo run report a permanent
@@ -123,11 +169,19 @@ if (isMain) {
     skip('freeze', system, existsSync(system) ? 'no token file' : 'no design-system.md');
   }
 
-  // 3. The Flutter copy has not drifted.
-  if (existsSync(dart)) {
-    add('tokens.dart', dart, run('tokens-dart.mjs', [tokens, '-o', dart, '--check']));
+  // 3. The Flutter copy has not drifted. Discovered, not assumed — see
+  // flutterTokenFiles for why a fixed path was actively misleading.
+  const dartFiles = dart ? [dart] : flutterTokenFiles('.');
+  if (dartFiles.length > 0) {
+    for (const f of dartFiles) {
+      add('tokens.dart', f, run('tokens-dart.mjs', [tokens, '-o', f, '--check']));
+    }
+  } else if (hasFlutterPackage('.')) {
+    skip('tokens.dart', 'lib/design/tokens.dart',
+      'a Flutter package is here but its tokens were never generated — run ' +
+      'tokens-dart.mjs, or the app and the website drift apart');
   } else {
-    skip('tokens.dart', dart, 'no Flutter surface');
+    skip('tokens.dart', '—', 'no Flutter package found');
   }
 
   // 4. The code actually consumes the tokens.

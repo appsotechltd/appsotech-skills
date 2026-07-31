@@ -75,7 +75,7 @@ test('an ordinary bundle with no secrets yields nothing', () => {
 
 // --- Regression: quadratic backtracking on high-eyJ-density base64 runs ---
 
-test('scanning a high-eyJ-density base64 run completes well under a second', () => {
+test('scanning a high-eyJ-density base64 run stays linear, not quadratic', () => {
   // Mirrors base64-encoded JSON embedded in a production bundle: a long,
   // unbroken base64url run containing many "eyJ" starts and no literal "."
   // to ever terminate a JWT match. An unbounded {10,} segment quantifier
@@ -86,7 +86,14 @@ test('scanning a high-eyJ-density base64 run completes well under a second', () 
   const startedAt = Date.now();
   const findings = scanText(text, 'huge.js');
   const elapsedMs = Date.now() - startedAt;
-  assert.ok(elapsedMs < 1000, `expected scan under 1000ms, took ${elapsedMs}ms`);
+  // The budget separates linear from quadratic, and nothing finer. Fixed runs
+  // ~0.6s locally and hit 1.1s on a shared CI runner; the unbounded quantifier
+  // this guards against is orders of magnitude worse, not 50% worse. An
+  // earlier 1000ms budget was a 1.1x margin against observed CI and failed a
+  // run on nothing but a slow machine. **Do not tighten this** — a timing
+  // assertion that fires on correct code teaches people to re-run until green,
+  // which is worse than not having it.
+  assert.ok(elapsedMs < 8000, `expected a linear scan, took ${elapsedMs}ms`);
   assert.deepEqual(findings, [], 'no literal "." anywhere, so no real JWT should be reported');
 });
 
@@ -246,7 +253,12 @@ test('scanning 128,000 unterminated PEM headers (~4MB, the reviewer\'s exact wor
   const startedAt = Date.now();
   const findings = scanText(text, 'huge.pem');
   const elapsedMs = Date.now() - startedAt;
-  assert.ok(elapsedMs < 5000, `expected scan well under 5000ms, took ${elapsedMs}ms`);
+  // Same reasoning, and here the separation is measured rather than assumed:
+  // the two broken implementations above took ~37s and ~44s, the fixed one
+  // takes ~3.7s on CI. Anything from 8s to 30s tells them apart. 5000ms was a
+  // 1.35x margin over the observed CI time — thin enough to be the next flake
+  // after the one above.
+  assert.ok(elapsedMs < 15000, `expected a linear scan, took ${elapsedMs}ms`);
   assert.equal(findings.length, 128000);
   assert.ok(findings.every((f) => f.kind === 'private key block (unterminated)'));
 });

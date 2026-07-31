@@ -4,7 +4,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { classify, surfaceDirs, PASS, FAIL, SKIP } from '../scripts/gate.mjs';
+import {
+  classify, surfaceDirs, flutterTokenFiles, hasFlutterPackage, PASS, FAIL, SKIP,
+} from '../scripts/gate.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'scripts', 'gate.mjs');
 
@@ -184,4 +186,80 @@ test('without --domain there is no domain step at all', () => {
   const out = run(dir).stdout;
   assert.doesNotMatch(out, /domain/);
   assert.match(out, /3 passed, 0 failed, 2 skipped/);
+});
+
+// --- finding the Flutter package ---------------------------------------------
+
+function flutterProject({ at = join('mobile'), tokens = true, pubspec = true } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'flut-'));
+  mkdirSync(join(dir, 'design'), { recursive: true });
+  mkdirSync(join(dir, at, 'lib', 'design'), { recursive: true });
+  writeFileSync(join(dir, 'design', 'tokens.css'), TOKENS);
+  writeFileSync(join(dir, 'design', 'design-system.md'), '# Design system\n\nSlate.\n');
+  if (pubspec) writeFileSync(join(dir, at, 'pubspec.yaml'), 'name: app\n');
+  if (tokens) {
+    execFileSync(process.execPath, [
+      join(import.meta.dirname, '..', 'scripts', 'tokens-dart.mjs'),
+      'design/tokens.css', '-o', join(at, 'lib', 'design', 'tokens.dart'),
+    ], { cwd: dir });
+  }
+  return dir;
+}
+
+test('the Flutter token file is found wherever the package sits', () => {
+  // The old fixed apps/mobile/... default reported "no Flutter surface" for a
+  // project that HAS one, so the drift check silently skipped a real file
+  // while asserting something false.
+  for (const at of ['mobile', join('apps', 'mobile'), join('packages', 'app')]) {
+    const dir = flutterProject({ at });
+    assert.deepEqual(flutterTokenFiles(dir),
+      [join(dir, at, 'lib', 'design', 'tokens.dart')], at);
+  }
+});
+
+test('a package at the repository root is found too', () => {
+  const dir = flutterProject({ at: '.' });
+  assert.deepEqual(flutterTokenFiles(dir), [join(dir, 'lib', 'design', 'tokens.dart')]);
+});
+
+test('build output is never walked', () => {
+  const dir = flutterProject({ at: 'mobile' });
+  mkdirSync(join(dir, 'node_modules', 'x', 'lib', 'design'), { recursive: true });
+  writeFileSync(join(dir, 'node_modules', 'x', 'lib', 'design', 'tokens.dart'), '// no');
+  assert.deepEqual(flutterTokenFiles(dir), [join(dir, 'mobile', 'lib', 'design', 'tokens.dart')]);
+});
+
+test('a discovered Flutter token file is actually checked for drift', () => {
+  const dir = flutterProject({ at: 'mobile' });
+  record(dir);
+  assert.match(run(dir, ['--src', join('mobile', 'lib')]).stdout,
+    /PASS {2}tokens\.dart {2}mobile/);
+});
+
+test('a Flutter package with no generated tokens is a finding, not an absence', () => {
+  // These two used to read identically. One means "there is no Flutter here";
+  // the other means "there is, and its palette was never generated" — which is
+  // how the app and the website drift apart.
+  const dir = flutterProject({ at: 'mobile', tokens: false });
+  record(dir);
+  assert.equal(hasFlutterPackage(dir), true);
+  const out = run(dir, ['--src', join('mobile', 'lib')]).stdout;
+  assert.match(out, /SKIP {2}tokens\.dart/);
+  assert.match(out, /never generated/);
+});
+
+test('no Flutter anywhere says exactly that', () => {
+  const dir = project();
+  record(dir);
+  assert.equal(hasFlutterPackage(dir), false);
+  assert.deepEqual(flutterTokenFiles(dir), []);
+  assert.match(run(dir).stdout, /no Flutter package found/);
+});
+
+test('--dart still overrides discovery', () => {
+  const dir = flutterProject({ at: 'mobile' });
+  record(dir);
+  const explicit = join('mobile', 'lib', 'design', 'tokens.dart');
+  assert.match(run(dir, ['--dart', explicit, '--src', join('mobile', 'lib')]).stdout,
+    /PASS {2}tokens\.dart/);
 });
