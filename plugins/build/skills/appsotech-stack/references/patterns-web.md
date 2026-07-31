@@ -219,14 +219,28 @@ Compound components over prop soup:
 Respect reduced motion:
 
 ```tsx
-const shouldReduceMotion = useReducedMotion();
+const reduce = useReducedMotion();
 
+// Drop the movement, KEEP the fade. Reduced motion means fewer and gentler
+// animations, not zero — an implementation that removes all feedback leaves
+// the user with no signal that anything happened, which is its own failure.
 <motion.div
-  initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 20 }}
+  initial={{ opacity: 0, y: reduce ? 0 : 20 }}
   animate={{ opacity: 1, y: 0 }}
-  transition={{ duration: shouldReduceMotion ? 0 : 0.3 }}
+  transition={{ duration: 0.2 }}
 />
 ```
+
+Gate hover motion too — touch fires a false hover on tap:
+
+```css
+@media (hover: hover) and (pointer: fine) {
+  .card:hover { transform: scale(1.02); }
+}
+```
+
+See `references/motion.md` for durations, easing and the frequency rule that
+decides whether an element should animate at all.
 
 Loading states: skeleton screens beat spinners, because a skeleton tells the
 user what is about to arrive.

@@ -59,6 +59,15 @@ The load-bearing rule is persistence. Cloud sessions start fresh, so if
 `design/design-system.md` exists it is **read, not regenerated**. Without that,
 the same repo gets a different palette every session and the product drifts.
 
+Motion is a third, narrower authority: `references/motion.md`, distilled from
+[emilkowalski/skills][emil] (MIT). It owns one row of the precedence table and
+touches no other — no colour, no type, no spacing. Its first question is whether
+the thing should animate at all, which no contrast script can answer: something
+the user sees a hundred times a day gets no animation, and the strongest fix is
+often to delete one. Durations and curves stay in `design-tokens.md`; motion.md
+says which to use where, because two timing tables is how a component ends up at
+160ms while a token says 150ms.
+
 Selection degrades in three tiers — query the script, invoke the skill by name,
 or fall back to twelve curated directions in `references/style-directions.md`.
 Only *style breadth* degrades: tokens, patterns, the accessibility floor and
@@ -110,6 +119,7 @@ There is no separate gateway. Coolify's Traefik is the only ingress — a proxy
 doing on-demand TLS would have to own `:443`, which Traefik already does.
 
 [promax]: https://github.com/nextlevelbuilder/ui-ux-pro-max-skill
+[emil]: https://github.com/emilkowalski/skills
 
 ### `appsotech-audit`
 
@@ -179,6 +189,13 @@ a real result`, `go list runs and reports a real result for the go root`,
 and `a partial npm audit failure across roots reconciles to one outcome per
 probe`. Contributors without Go installed will see those three fail — that's
 expected, not a regression.
+
+`.github/workflows/tests.yml` runs both suites on push and pull request across
+Node 22 and 24, with Go and Playwright installed so nothing skips: the
+browser-backed responsive tests skip silently when Playwright is absent, so the
+workflow asserts it resolved before running anything. A weekly job runs the
+whole suite five times over — a timing assertion with a thin margin passes most
+of the time, and one green tick does not distinguish it from a sound one.
 
 ## Licence
 

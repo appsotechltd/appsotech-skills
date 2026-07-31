@@ -55,6 +55,9 @@ which is a decision someone can review — deleting a rule is not.
 - `<div onclick>` instead of `<button>`
 - Dynamic Tailwind class names — `bg-${color}-500`
 - Animating layout properties — width, height, margin, padding
+- `transition: all` — animates properties nobody chose, off the GPU
+- `scale(0)` — nothing in the real world appears out of nothing
+- Framer Motion `x`/`y`/`scale` shorthands — main thread, drops frames
 - Reading layout properties in loops (thrashing)
 - Missing `alt` text
 - Forms without labels
@@ -112,6 +115,10 @@ which is a decision someone can review — deleting a rule is not.
 
 - [ ] Mobile-first, not desktop-shrunk
 - [ ] **[auto]** Animations use only transform and opacity
+- [ ] Nothing animates that is triggered 100+ times a day
+- [ ] No `ease-in` on UI, and no `transition: all`
+- [ ] Rapidly-retriggered motion uses transitions, not keyframes
+- [ ] Reduced motion drops movement but keeps the feedback
 - [ ] **[auto]** No dynamic Tailwind class names
 - [ ] `cn()` used for class merging
 - [ ] Dark mode via CSS variables / `ThemeData`, not per-component branches

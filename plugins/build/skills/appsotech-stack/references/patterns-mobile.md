@@ -151,10 +151,18 @@ Honour the OS reduce-motion setting:
 
 ```dart
 final reduceMotion = MediaQuery.of(context).disableAnimations;
+
+// Keep the fade, drop the movement. Reduced motion means fewer and gentler
+// animations, not none — zeroing every duration removes the feedback that
+// tells the user their tap registered.
 AnimatedOpacity(
-  duration: reduceMotion ? Duration.zero : const Duration(milliseconds: 200),
+  duration: const Duration(milliseconds: 200),
   opacity: visible ? 1 : 0,
-  child: child,
+  child: AnimatedSlide(
+    duration: const Duration(milliseconds: 200),
+    offset: reduceMotion ? Offset.zero : slideFrom,
+    child: child,
+  ),
 );
 ```
 

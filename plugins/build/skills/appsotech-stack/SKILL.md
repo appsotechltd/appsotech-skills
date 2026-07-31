@@ -57,7 +57,7 @@ has the last word.
 | Token architecture and naming (`--background`, `--primary`, dark mode) | **elite** — pro-max supplies values *into* this scheme |
 | Type scale, line-height, 45–75ch measure, max 2–3 typefaces | **elite** |
 | Spacing scale and section rhythm | **elite** |
-| Motion — transform/opacity only, `prefers-reduced-motion` honoured | **elite** — pro-max's GSAP presets are filtered through it |
+| Motion — whether to animate at all, duration, easing, gestures | **elite's constraints + `references/motion.md`'s craft bar** — pro-max's GSAP presets are filtered through both |
 | Accessibility floor — 4.5:1 text, 3:1 focus ring, 44×44px targets, labelled inputs | **elite, non-negotiable** |
 | Responsive across mobile, tablet and desktop | **elite, non-negotiable** |
 | Light *and* dark mode on every surface | **elite, non-negotiable** |
@@ -317,6 +317,7 @@ Read `references/backend-go.md`, `references/web-surfaces.md` and
 | `references/patterns-web.md` | a dashboard, landing page or Tailwind/React component |
 | `references/mobile-flutter.md` | Flutter — how the app is wired: API client, auth, offline |
 | `references/patterns-mobile.md` | Flutter — how it looks: `ThemeData`, light/dark, responsive |
+| `references/motion.md` | anything animates — and *before* adding motion, since its first rule is whether to animate at all |
 | `references/services.md` | the product took jobs, caching, chat, calls, storage or email |
 
 The two Flutter files are deliberately separate and both apply: one is
@@ -343,6 +344,8 @@ Three rules apply to every feature:
 - **Every job handler is idempotent.** Delivery is at-least-once.
 - **No component names a raw colour.** It is broken in dark mode and nobody
   finds out until they look.
+- **Ask whether it should animate before animating it.** A keyboard-initiated
+  action seen 100+ times a day gets no animation at all — see `motion.md`.
 
 ## Phase 8 — Deploy *(Routes A and B)*
 

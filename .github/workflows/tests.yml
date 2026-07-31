@@ -1,0 +1,95 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly, for the flake job below. Nothing here has a release cadence; the
+    # point is repeated runs, not freshness.
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the floor the README states; 24 catches a break before the
+        # floor moves under us.
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # Three audit tests shell out to a real `go` — deliberate integration
+      # tests, documented in the README. 1.24 is what scaffold.mjs writes into
+      # the go.mod it generates.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      # Playwright is not a dependency of this repository: responsive-check.mjs
+      # resolves it from the project or a global install, and the tests that
+      # need it skip when it is absent. Installing it globally is what makes
+      # them run here rather than silently skip.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --global playwright
+          playwright install --with-deps chromium
+
+      # A skipped browser test is a green tick with no coverage behind it, so
+      # fail the run outright if the install above did not take.
+      - name: Assert Playwright is resolvable
+        run: |
+          node -e '
+            import("./plugins/build/skills/appsotech-stack/scripts/responsive-check.mjs")
+              .then(({ resolvePlaywright }) => {
+                const p = resolvePlaywright(".");
+                if (!p) { console.error("Playwright did not resolve — browser tests would skip."); process.exit(1); }
+                console.log("Playwright:", p);
+              });
+          '
+
+      - name: appsotech-audit
+        run: node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs
+
+      - name: appsotech-stack
+        run: node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
+
+  # Timing assertions only fail some of the time. One green run says nothing
+  # about a test whose margin is 1.0x; five in a row say rather more.
+  flake:
+    name: repeat suite (flake watch)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+      - name: Run the whole suite five times
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "::group::run $i"
+            node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs || exit 1
+            node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs || exit 1
+            echo "::endgroup::"
+          done

@@ -126,18 +126,37 @@ Fix the token and re-run. Never widen the threshold.
 
 ## Animation timing
 
-```
---duration-instant: 50ms    --ease-default: cubic-bezier(0.4, 0, 0.2, 1)
---duration-fast:    100ms   --ease-in:      cubic-bezier(0.4, 0, 1, 1)
---duration-normal:  200ms   --ease-out:     cubic-bezier(0, 0, 0.2, 1)
---duration-slow:    300ms   --ease-bounce:  cubic-bezier(0.34, 1.56, 0.64, 1)
---duration-slower:  500ms
+These are the **values**. Which token to use for what, and every other motion
+rule, is `references/motion.md` — one table of values here, one table of usage
+there. Two timing tables is how a component ends up at 160ms while a token says
+150ms.
+
+```css
+--duration-instant: 50ms;
+--duration-fast:    100ms;
+--duration-normal:  200ms;
+--duration-slow:    300ms;
+--duration-slower:  500ms;
+
+/* Strong curves. The browser's built-ins are too weak for UI — an entrance on
+   the default ease reads as sluggish next to these. */
+--ease-default:  cubic-bezier(0.4, 0, 0.2, 1);
+--ease-out:      cubic-bezier(0.23, 1, 0.32, 1);
+--ease-in-out:   cubic-bezier(0.77, 0, 0.175, 1);
+--ease-drawer:   cubic-bezier(0.32, 0.72, 0, 1);
+--ease-bounce:   cubic-bezier(0.34, 1.56, 0.64, 1);
 ```
 
-- Button feedback 100–150ms — must feel instantaneous
+There is deliberately **no `--ease-in`**. It starts slow, delaying the exact
+moment the user is watching, and `motion.md` uses `--ease-out` for both
+entrances and exits. This departs from elite §2, which assigned `--ease-in` to
+exiting elements — recorded as a decision rather than a silent overwrite.
+
+The hard rules, which `motion.md` expands:
+
 - **Only** animate `transform` and `opacity` (GPU accelerated)
 - **Never** animate `width`, `height`, `margin`, `padding` — triggers reflow
-- Respect `prefers-reduced-motion`
+- Respect `prefers-reduced-motion` — *fewer and gentler*, never zero
 
 pro-max's GSAP presets pass through these rules. A preset that animates layout
 properties is rewritten or dropped, not adopted.
