@@ -78,6 +78,7 @@ if (isMain) {
   const tokens = flag('--tokens', join('design', 'tokens.css'));
   const system = flag('--system', join('design', 'design-system.md'));
   const dart = flag('--dart', join('apps', 'mobile', 'lib', 'design', 'tokens.dart'));
+  const domain = flag('--domain', join('docs', 'domain.md'));
   const serveDir = flag('--serve');
   const url = flag('--url');
   const srcArg = flag('--src');
@@ -85,6 +86,21 @@ if (isMain) {
   const steps = [];
   const add = (name, target, result) => steps.push({ name, target, ...result });
   const skip = (name, target, why) => steps.push({ name, target, status: SKIP, output: why });
+
+  // 0. Was the domain ever written down?
+  //
+  // Phase 9 says a phase that was skipped is said plainly, not omitted — and
+  // until this, a project whose domain lives only in a chat transcript passed
+  // the gate in silence. This asserts a file exists and nothing more: whether
+  // its contents are any good, and whether the spec's acceptance criteria
+  // honestly became tests, are judgement calls that stay human.
+  if (existsSync(domain)) {
+    add('domain', domain, { status: PASS, code: 0, output: 'recorded' });
+  } else {
+    skip('domain', domain,
+      'the domain was never written down — Phase 4 produced no file, so the ' +
+      'next session inherits nothing');
+  }
 
   // 1. The tokens themselves.
   if (existsSync(tokens)) {

@@ -17,13 +17,16 @@ const TOKENS = `:root {
 }
 .dark { --background: 222 47% 4%; --foreground: 210 40% 98%; --ring: 210 40% 98%; }`;
 
-function project({ tokens = TOKENS, src = 'export const C = () => <button>Go</button>;' } = {}) {
+function project({ tokens = TOKENS, src = 'export const C = () => <button>Go</button>;',
+  domain = true } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'gate-'));
   mkdirSync(join(dir, 'design'), { recursive: true });
+  mkdirSync(join(dir, 'docs'), { recursive: true });
   mkdirSync(join(dir, 'apps', 'webapp', 'src'), { recursive: true });
   writeFileSync(join(dir, 'design', 'tokens.css'), tokens);
   writeFileSync(join(dir, 'design', 'design-system.md'), '# Design system\n\nSlate on white.\n');
   writeFileSync(join(dir, 'apps', 'webapp', 'src', 'C.tsx'), src);
+  if (domain) writeFileSync(join(dir, 'docs', 'domain.md'), '# Domain\n\nOne tenant is a clinic.\n');
   return dir;
 }
 function run(cwd, args = []) {
@@ -75,6 +78,7 @@ test('a clean project passes, with the un-runnable steps marked SKIP', () => {
   record(dir);
   const res = run(dir);
   assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /PASS {2}domain/);
   assert.match(res.stdout, /PASS {2}contrast/);
   assert.match(res.stdout, /PASS {2}freeze/);
   assert.match(res.stdout, /PASS {2}markup/);
@@ -88,7 +92,7 @@ test('skips are never counted as passes, and are called out every run', () => {
   const dir = project();
   record(dir);
   const out = run(dir).stdout;
-  assert.match(out, /3 passed, 0 failed, 2 skipped/);
+  assert.match(out, /4 passed, 0 failed, 2 skipped/);
   assert.match(out, /did not run\. They are not passes/);
 });
 
@@ -144,4 +148,29 @@ test('every step is one of exactly three states', () => {
     const m = line.match(/^ {2}(\w+) {2}\w/);
     if (m) assert.ok([PASS, FAIL, SKIP].includes(m[1]), line);
   }
+});
+
+test('a domain that was never written down is surfaced, not passed over', () => {
+  // Phase 9: a phase that was skipped is said plainly, not omitted. Until this
+  // step existed, a project whose domain lived only in a chat transcript
+  // passed the gate in silence — and a cloud session inherits nothing from a
+  // transcript.
+  const dir = project({ domain: false });
+  record(dir);
+  const res = run(dir);
+  assert.match(res.stdout, /SKIP {2}domain/);
+  assert.match(res.stdout, /never written down/);
+  // A missing domain is a gap in the record, not a broken build. It reports
+  // and does not fail, the same way an absent Flutter surface does.
+  assert.equal(res.status, 0, res.stdout);
+});
+
+test('the domain step asserts existence only, never contents', () => {
+  // Whether the domain notes are any good, and whether a spec's acceptance
+  // criteria honestly became tests, are judgement calls. Automating those
+  // badly would convert a real human check into a green tick.
+  const dir = project();
+  writeFileSync(join(dir, 'docs', 'domain.md'), 'tbd\n');
+  record(dir);
+  assert.match(run(dir).stdout, /PASS {2}domain/);
 });
