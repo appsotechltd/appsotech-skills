@@ -1,4 +1,4 @@
-# The gate — Phase 5
+# The gate — Phase 4
 
 Vendored from **elite-frontend-ux** §8–10, with responsive and dark-mode items
 added. Run this **last, on finished code**, before presenting anything.
@@ -167,7 +167,7 @@ which is a decision someone can review — deleting a rule is not.
 - [ ] The form traces to `design/design-system.md`, not invented this session
 - [ ] Text over a hero image sits on a scrim that holds 4.5:1 across the whole
       text box — `contrast.mjs` cannot sample a photograph
-- [ ] No canvas on `webapp` or `admin-web` at all
+- [ ] No canvas on any surface behind auth — see `hero.md` for which qualify
 
 ### UX integrity
 

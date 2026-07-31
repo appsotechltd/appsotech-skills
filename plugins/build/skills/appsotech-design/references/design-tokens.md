@@ -1,4 +1,4 @@
-# Tokens and the accessibility floor — Phase 3
+# Tokens and the accessibility floor — Phase 2
 
 Vendored from **elite-frontend-ux** §2–3. This file is the authority on token
 architecture, naming, scale and the accessibility floor in every tier, whether

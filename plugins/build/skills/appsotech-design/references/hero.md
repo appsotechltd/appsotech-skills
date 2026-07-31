@@ -1,7 +1,7 @@
-# Hero treatment — Phases 5, 6 and 7
+# Hero treatment — Phases 2, 3 and 4
 
-The hero is the one place this stack allows decorative motion and 3D. This file
-owns which treatment a page gets, what it may cost, and how it degrades.
+The hero is the one place this skill allows decorative motion and 3D. This
+file owns which treatment a page gets, what it may cost, and how it degrades.
 
 It is not a licence for 3D elsewhere. A canvas anywhere but a hero needs a
 reason that is not "it looks good" — see `motion.md`'s frequency gate.
@@ -24,13 +24,15 @@ things competing for the same attention, and twice the frame budget.
 
 ## Which surfaces may have one
 
-| Surface | Allowed |
-|---|---|
-| `platform-web` | Yes — marketing, first impression, visited once |
-| `tenant-web` | Yes — same, subject to the tenant's own frozen system |
-| `webapp` | **No.** Behind auth, opened forty times a day |
-| `admin-web` | **No.** Same, plus operators are working, not being sold to |
-| `mobile` (Flutter) | Image or gradient only — no WebGL |
+The test is who visits and how often, not what the surface is called.
+
+| Kind of surface | Allowed | Appsotech name |
+|---|---|---|
+| Public, marketing, a first impression | Yes | `platform-web` |
+| Public, a tenant's or customer's own site | Yes — subject to their frozen system | `tenant-web` |
+| Behind auth, opened daily | **No.** Forty visits a day, and they already bought it | `webapp` |
+| An operator or admin console | **No.** They are working, not being sold to | `admin-web` |
+| Native mobile (Flutter) | Image or gradient only — no WebGL | `mobile` |
 
 This is `motion.md`'s frequency gate applied to a whole surface. Ambient motion
 on a page someone opens every morning is a battery tax on a person who has
@@ -50,9 +52,9 @@ needs no scene graph, no material system and no renderer — a 2D context and a
 depth or a mesh that could not be faked in 2D.
 
 Never Spline: the scene loads from `prod.spline.design`, which puts a
-third-party host on the critical path of a page served from your own Coolify
-box. Never vanilla Three.js on a React surface, and never Babylon — one answer
-per case is the point.
+third-party host on the critical path of a page you otherwise serve yourself.
+Never vanilla Three.js on a React surface, and never Babylon — one answer per
+case is the point.
 
 ## Deriving the shape from the page
 
@@ -82,9 +84,9 @@ left the design system.
 
 ## The performance budget
 
-The hero sits on the two surfaces where Core Web Vitals are the point — both
-are Next.js, indexed, and SSR earns its cost there. Every rule below exists
-because the naive version costs LCP, INP or battery.
+A hero sits on the public, indexed surfaces — the ones where Core Web Vitals
+are the point and SSR earns its cost. Every rule below exists because the naive
+version costs LCP, INP or battery.
 
 - **The canvas is never the LCP element.** The `<h1>` is, and it is real
   server-rendered text. Decoration sits behind, `aria-hidden`, and carries no

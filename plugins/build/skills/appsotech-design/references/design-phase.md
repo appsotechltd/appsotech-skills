@@ -1,7 +1,7 @@
-# Selection — Phase 2
+# Selection — Phase 1
 
 **Only reached when `design/design-system.md` does not exist.** If it does,
-read it and go to Phase 3.
+read it and go to Phase 2.
 
 ## Before querying anything
 
@@ -21,7 +21,7 @@ technically-compliant interface with no point of view.
 and a design that hedges between two directions reads as neither.
 
 **The memorability test.** What ONE thing will users remember? If you cannot
-answer, the design has no focus yet — and the checklist in Phase 5 asks you to
+answer, the design has no focus yet — and the checklist in Phase 4 asks you to
 name it, so decide now rather than inventing an answer later.
 
 Write the answers into `design/design-system.md` at freeze time. They are the
@@ -62,7 +62,7 @@ python3 "$SEARCH" "school management dashboard" -d color -n 3 --json
 python3 "$SEARCH" "school management dashboard" -d typography -n 3 --json
 ```
 
-Stack-specific guidance, once the stack is known from Phase 1:
+Stack-specific guidance, once the project's stack is known:
 
 ```bash
 python3 "$SEARCH" "data table" -s react -n 3 --json

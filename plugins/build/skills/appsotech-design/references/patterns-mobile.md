@@ -1,6 +1,6 @@
-# Flutter patterns — Phase 4
+# Flutter patterns — Phase 3
 
-Read this when the surface is `apps/mobile` or any Flutter target. The design
+Read this for any Flutter target (`apps/mobile` on the house stack). The design
 system is the same one the web surfaces use — same style, same palette, same
 type pairing — expressed as `ThemeData` instead of CSS custom properties.
 
@@ -10,7 +10,7 @@ type pairing — expressed as `ThemeData` instead of CSS custom properties.
 generates the Dart copy from the same values:
 
 ```
-node "$TOKENSDART" design/tokens.css -o apps/mobile/lib/design/tokens.dart
+node "$TOKENSDART" design/tokens.css -o <package>/lib/design/tokens.dart
 ```
 
 **Never hand-typed alongside the CSS**, and the generator's `--check` mode is
@@ -25,7 +25,7 @@ dark's own keys alone. A generator that did the latter would leave holes where
 the CSS has none.
 
 ```dart
-// apps/mobile/lib/design/tokens.dart — generated. Do not edit by hand.
+// <package>/lib/design/tokens.dart — generated. Do not edit by hand.
 import 'package:flutter/material.dart';
 
 class AppColors {

@@ -1,4 +1,4 @@
-# Web patterns — Phase 4
+# Web patterns — Phase 3
 
 Vendored from **elite-frontend-ux** §4–7, with the responsive section expanded.
 Read this when the work is a dashboard, a landing page, or a Tailwind/React
