@@ -9,14 +9,27 @@ a gate nobody ran.
 ## Run the scripts first
 
 ```
-node "$CONTRAST" design/tokens.css      # tokens still compliant
-node "$AUDIT" <src-dir>                 # the code actually uses them
-node "$RESPONSIVE" --serve <build-dir>  # it holds up in a real browser
+node "$GATE" --serve <build-dir>        # all of it, one summary
+```
+
+It discovers `design/` and every `apps/*/src` from the conventions, so only the
+rendered target needs naming. Underneath it runs:
+
+```
+node "$CONTRAST" design/tokens.css                  # tokens still compliant
+node "$FREEZE" design/tokens.css design/design-system.md  # …and still the frozen ones
+node "$TOKENSDART" design/tokens.css -o <dart> --check    # Flutter copy has not drifted
+node "$AUDIT" <src-dir>                             # the code actually uses them
+node "$RESPONSIVE" --serve <build-dir>              # it holds up in a real browser
 ```
 
 `--serve` runs a static server with the SPA fallback over a build directory, so
 a built surface is one command. A single-file prototype or a running dev server
 can be passed directly instead.
+
+**A step that could not run prints `SKIP` and is never counted as a pass.** If
+Playwright is absent the rendered checks skip; that is a gap in the run, not a
+clean bill of health, and the summary repeats it at the end.
 
 Between them these cover the checklist items marked **[auto]** below. Everything
 else needs a human pass — and those are not leftovers, they are the judgement
@@ -80,6 +93,11 @@ which is a decision someone can review — deleting a rule is not.
 ### Accessibility
 
 - [ ] **[auto]** Contrast ≥ 4.5:1 text, ≥ 3:1 focus ring, both light and dark
+- [ ] **[auto]** Contrast holds *as rendered* — a token used against an
+      unintended background, or a translucent foreground, fails here and passes
+      the token file
+- [ ] **[auto]** Text over an image or gradient is reported for a human — the
+      checker will not guess a ratio it cannot compute
 - [ ] **[auto]** Touch targets ≥ 44×44px at every breakpoint
 - [ ] **[auto]** All images have `alt`
 - [ ] **[auto]** All form fields have a `<label>`, `aria-label` or `aria-labelledby`
@@ -94,6 +112,9 @@ which is a decision someone can review — deleting a rule is not.
 - [ ] **[auto]** No horizontal page scroll — wide content scrolls in its own container
 - [ ] Images `max-w-full`; no fixed width exceeding a phone
 - [ ] **[auto]** Form controls ≥16px on mobile (below this iOS zooms on focus)
+- [ ] **[auto]** Nothing clips its own content at 740×360 — a phone in
+      landscape, where `height: 100vh` eats the CTA
+- [ ] Fixed chrome leaves room to read on a short viewport
 - [ ] Flutter: checked in landscape and at the largest OS text scale
 
 ### Dark mode
@@ -150,9 +171,21 @@ which is a decision someone can review — deleting a rule is not.
 - [ ] Loading states exist, and are skeletons rather than bare spinners
 - [ ] Empty states say what this is and what fills it
 
+### Flutter
+
+- [ ] **[auto]** No `Color(0x…)` literal and no bare `Colors.blue` — the
+      palette or `Theme.of(context).colorScheme`
+- [ ] **[auto]** `tokens.dart` regenerated, not hand-edited beside the CSS
+- [ ] **[auto]** Every `Image.*` has a `semanticLabel`, or `excludeFromSemantics`
+- [ ] **[auto]** Breakpoints come from `LayoutBuilder`, not `MediaQuery.size`
+- [ ] **[auto]** `GestureDetector` tap handlers are wrapped in `Semantics`
+- [ ] Checked at the largest OS text scale and in landscape
+
 ### Consistency with the frozen system
 
 - [ ] **[auto]** Every colour traces to a token in `design/tokens.css`
+- [ ] **[auto]** `tokens.css` still holds the palette `design-system.md`
+      describes — the freeze fingerprint matches
 - [ ] Any deviation is recorded in `design/overrides.md`, with a reason
 - [ ] Nothing re-selected the style — `design/design-system.md` is unchanged
       unless the user explicitly asked for a restyle

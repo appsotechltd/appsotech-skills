@@ -8,6 +8,7 @@ import {
   VIEWPORTS, TAP_MIN, IOS_ZOOM_FLOOR,
   resolvePlaywright, playwrightCandidates, targetUrl,
   summarise, darkModeFinding, safeJoin, serveDir, MIME,
+  SHORT_VIEWPORT, PROBES, SHORT_MAX,
 } from '../scripts/responsive-check.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'scripts', 'responsive-check.mjs');
@@ -261,14 +262,15 @@ const BAD = `<style>
 <p>Read the <a href="#x">documentation</a> for more detail, which is inline body copy here.</p>`;
 
 const GOOD = `<style>
-  :root { --bg:#fff; --fg:#10202B; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#08141B; --fg:#EAF2F6; } }
+  :root { --bg:#fff; --fg:#10202B; --link:#0B4F8A; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#08141B; --fg:#EAF2F6; --link:#7CC4FF; } }
   body { margin:0; background:var(--bg); color:var(--fg); font-size:16px; }
   .wrap { max-width:100%; padding:16px; }
   .scroller { overflow-x:auto; }
   .scroller table { width:900px; }
   button { min-width:44px; min-height:44px; font-size:16px; }
   input { font-size:16px; min-height:44px; }
+  a { color:var(--link); }
 </style>
 <div class="wrap">
   <div class="scroller"><table><tr><td>wide but contained</td></tr></table></div>
@@ -313,7 +315,7 @@ test('a compliant page passes at every width in both schemes', { skip: !HAS_PW &
   const r = run([path, '--no-shots']);
   assert.equal(r.status, 0);
   assert.match(r.stdout, /Nothing to fix/);
-  assert.match(r.stdout, /3 width\(s\) × 2 schemes/);
+  assert.match(r.stdout, /4 width\(s\) × 2 schemes/);
 });
 
 test('--serve checks a built directory end to end', { skip: !HAS_PW && 'playwright not installed' }, () => {
@@ -333,4 +335,160 @@ test('screenshots are written per width and scheme', { skip: !HAS_PW && 'playwri
   // Two widths in two schemes — the dark shots are the artefact that makes a
   // dark-mode review possible at all.
   assert.deepEqual(files, ['320px-dark.png', '320px-light.png', '768px-dark.png', '768px-light.png']);
+});
+
+// --- the short viewport -----------------------------------------------------
+
+test('the landscape probe is separate from the width probes', () => {
+  // VIEWPORTS answers "does this overflow sideways"; the landscape entry
+  // answers a different question, so appending it to that list would confuse
+  // what each probe is for.
+  assert.deepEqual(VIEWPORTS.map((v) => v.width), [320, 768, 1280]);
+  assert.equal(SHORT_VIEWPORT.height, 360);
+  assert.ok(SHORT_VIEWPORT.height <= SHORT_MAX);
+  assert.deepEqual(PROBES.map((v) => v.name),
+    ['mobile', 'tablet', 'desktop', 'landscape']);
+});
+
+test('every width probe is too tall to catch a short-viewport clip', () => {
+  // If one of them were short, the landscape probe would be redundant. This
+  // is what makes the gap real rather than theoretical.
+  for (const v of VIEWPORTS) assert.ok(v.height > SHORT_MAX, v.name);
+});
+
+const CLIPPING_HERO = `<!doctype html><meta name=viewport content="width=device-width">
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui}
+.hero{height:100vh;overflow:hidden;padding:16px}.tall{height:500px}
+a{min-width:44px;min-height:44px;display:inline-block}</style>
+<section class=hero><h1>Ship faster</h1>
+<div class=tall>Body copy long enough to count as real content here.</div>
+<a href="#x">Get started</a></section>`;
+
+const GROWING_HERO = CLIPPING_HERO.replace('height:100vh;overflow:hidden', 'min-height:100svh');
+
+test('a hero that clips its own content in landscape is caught', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  const { path } = fixture(CLIPPING_HERO);
+  const res = run([path, '--no-shots']);
+  assert.equal(res.status, 1);
+  assert.match(res.stdout, /short-viewport-clip/);
+  // …and only at the short probe. Reporting it at 320x640 would be wrong:
+  // there is nothing cut off there.
+  assert.match(res.stdout, /landscape[\s\S]*short-viewport-clip/);
+});
+
+test('min-height instead of height is the fix, and is not reported', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // Content taller than a landscape phone is normal — scrolling is the right
+  // answer. Only content that is CUT OFF is a finding.
+  const { path } = fixture(GROWING_HERO);
+  assert.doesNotMatch(run([path, '--no-shots']).stdout, /short-viewport-clip/);
+});
+
+// --- rendered contrast ------------------------------------------------------
+
+const page = (body, css = '') => `<!doctype html><meta name=viewport content="width=device-width">
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui}${css}
+@media (prefers-color-scheme: dark){body{background:#0b0b0b;color:#f4f4f4}}</style>${body}`;
+
+test('text below the floor as painted is caught', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  const { path } = fixture(page(
+    '<p class=faint>Grey body copy that fails the four point five to one floor.</p>',
+    '.faint{color:#a9a9a9}'));
+  const res = run([path, '--no-shots', '--widths', '1280']);
+  assert.equal(res.status, 1);
+  assert.match(res.stdout, /rendered-contrast: p\.faint/);
+});
+
+test('a translucent foreground is composited, which the token file cannot do', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // contrast.mjs sees `--foreground: 222 47% 11%` and passes it. The alpha is
+  // applied in the component, so only the rendered page shows the real ratio.
+  const { path } = fixture(page(
+    '<p class=t>Translucent foreground the token file cannot possibly show.</p>',
+    '.t{color:rgba(17,17,17,.35)}'));
+  const res = run([path, '--no-shots', '--widths', '1280']);
+  assert.match(res.stdout, /rendered-contrast: p\.t/);
+  assert.match(res.stdout, /translucent/);
+});
+
+test('large text is held to 3:1, not 4.5:1', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // #8a8a8a on white is about 3.5:1 — a failure as body copy, compliant at
+  // 32px. Getting this wrong would fire on every correctly-built display line.
+  const { path } = fixture(page(
+    '<p class=huge>Large display text above the three to one floor</p>',
+    '.huge{font-size:32px;color:#8a8a8a}'));
+  assert.doesNotMatch(run([path, '--no-shots', '--widths', '1280']).stdout,
+    /rendered-contrast: p\.huge/);
+});
+
+test('text on an image or gradient is advisory, never a failure', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // A contrast checker that cried wolf over every gradient is one that gets
+  // switched off within a week. It cannot be computed, so it is handed to a
+  // human instead of guessed at.
+  const { path } = fixture(page(
+    '<p class=photo>Text sitting on a gradient background here.</p>',
+    '.photo{background-image:linear-gradient(#333,#999);color:#fff;padding:8px}'));
+  const res = run([path, '--no-shots', '--widths', '1280']);
+  assert.match(res.stdout, /contrast-unverifiable/);
+  assert.match(res.stdout, /warn/);
+  assert.equal(res.status, 0, 'advisory must not fail the run');
+});
+
+test('a compliant page reports nothing at any probe or scheme', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // The precision test that matters: four widths, two schemes, zero findings.
+  const { path } = fixture(`<!doctype html><meta name=viewport content="width=device-width">
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui}
+.hero{min-height:100svh;padding:16px}
+a{color:#0b4f8a;min-width:44px;min-height:44px;display:inline-block}
+@media (prefers-color-scheme: dark){body{background:#0b0b0b;color:#f4f4f4}a{color:#7cc4ff}}
+</style><section class=hero><h1>Ship faster</h1>
+<p>Body copy long enough to count as real content on this page.</p>
+<a href="#x">Get started</a></section>`);
+  const res = run([path, '--no-shots']);
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /0 error\(s\), 0 warning\(s\)/);
+});
+
+test('a dark-only contrast regression is reported as dark-only', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // The classic cascade bug: the dark rule is written, then overridden by a
+  // later rule of equal specificity, so the dark block exists and does nothing.
+  const { path } = fixture(`<!doctype html>
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui}
+@media (prefers-color-scheme: dark){body{background:#0b0b0b;color:#f4f4f4}a{color:#7cc4ff}}
+a{color:#0b4f8a}</style><a href="#x">Get started with the product</a>`);
+  const res = run([path, '--no-shots', '--widths', '1280']);
+  assert.match(res.stdout, /rendered-contrast/);
+  assert.match(res.stdout, /only in dark mode/);
+});
+
+// --- serving from a relative root -------------------------------------------
+
+test('a relative --serve root resolves, which is the documented invocation', () => {
+  // Regression: safeJoin compared a relative `full` against an absolute
+  // `base`, so `--serve apps/webapp/dist` — exactly what SKILL.md prints —
+  // 403'd every request and the page under test was an error body. Every
+  // existing --serve test used an absolute mkdtemp path and missed it.
+  const dir = mkdtempSync(join(tmpdir(), 'rel-'));
+  mkdirSync(join(dir, 'apps', 'web', 'dist'), { recursive: true });
+  const rel = join('apps', 'web', 'dist');
+  const abs = join(dir, rel);
+  const cwd = process.cwd();
+  try {
+    process.chdir(dir);
+    assert.equal(safeJoin(rel, '/'), abs);
+    assert.equal(safeJoin(rel, '/index.html'), join(abs, 'index.html'));
+    assert.equal(safeJoin(rel, '/../../../etc/passwd'), null, 'escape still blocked');
+  } finally {
+    process.chdir(cwd);
+  }
+});
+
+test('--serve works end to end from a relative path', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'relserve-'));
+  mkdirSync(join(dir, 'dist'), { recursive: true });
+  writeFileSync(join(dir, 'dist', 'index.html'), GOOD);
+  const r = execFileSync(process.execPath, [CLI, '--serve', 'dist', '--no-shots'],
+    { cwd: dir, encoding: 'utf8' });
+  // Before the fix this passed for the wrong reason: the served body was the
+  // string "forbidden", which overflows nothing and has no tap targets.
+  assert.match(r, /Nothing to fix/);
+  assert.doesNotMatch(r, /forbidden/);
 });

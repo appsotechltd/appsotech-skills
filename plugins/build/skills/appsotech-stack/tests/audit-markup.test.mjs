@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import {
-  auditFile, auditFiles, extractTags, collect, isNextRouteFile,
+  auditFile, auditFiles, extractTags, collect, isNextRouteFile, dartCallArgs,
 } from '../scripts/audit-markup.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'scripts', 'audit-markup.mjs');
@@ -408,4 +408,128 @@ test('design-ok suppresses each of the three hero rules', () => {
   for (const [path, src, rule] of cases) {
     assert.deepEqual(rules(path, src).filter((r) => r === rule), [], rule);
   }
+});
+
+// --- Flutter ----------------------------------------------------------------
+
+test('a bare Material colour is the Dart hardcoded colour', () => {
+  const found = audit('lib/card.dart', 'color: Colors.blue,');
+  const f = found.find((x) => x.rule === 'bare-material-colour');
+  assert.ok(f);
+  assert.equal(f.severity, 'error');
+  assert.match(f.why, /dark mode/);
+});
+
+test('Colors.transparent is structural, not a palette choice', () => {
+  assert.deepEqual(
+    rules('lib/card.dart', 'color: Colors.transparent,')
+      .filter((r) => r === 'bare-material-colour'), []);
+});
+
+test('the frozen palette and the theme are both the correct answer', () => {
+  // These are what the skill prescribes. Flagging either would flag the fix.
+  for (const src of [
+    'color: AppColors.primary,',
+    'color: Theme.of(context).colorScheme.primary,',
+  ]) {
+    assert.deepEqual(audit('lib/card.dart', src), [], src);
+  }
+});
+
+test('Color(0x…) is still caught alongside the new rules', () => {
+  // The one rule Dart had before must not have been displaced by them.
+  assert.ok(rules('lib/card.dart', 'color: Color(0xFF3B82F6),')
+    .includes('hardcoded-colour'));
+});
+
+test('MediaQuery used as a breakpoint is a warning', () => {
+  const found = audit('lib/home.dart',
+    'if (MediaQuery.of(context).size.width > 600) return Wide();');
+  const f = found.find((x) => x.rule === 'mediaquery-breakpoint');
+  assert.ok(f);
+  assert.equal(f.severity, 'warn');
+  assert.match(f.why, /LayoutBuilder/);
+  // The newer sizeOf form is the same mistake.
+  assert.ok(rules('lib/home.dart', 'MediaQuery.sizeOf(context).width >= 900')
+    .includes('mediaquery-breakpoint'));
+});
+
+test('MediaQuery for anything other than a breakpoint is left alone', () => {
+  // Padding, insets and text scale are all legitimate reads. Only a
+  // comparison against a literal is a breakpoint.
+  for (const src of [
+    'final pad = MediaQuery.of(context).padding.top;',
+    'final w = MediaQuery.of(context).size.width;',
+    'final scale = MediaQuery.textScalerOf(context);',
+  ]) {
+    assert.deepEqual(
+      rules('lib/home.dart', src).filter((r) => r === 'mediaquery-breakpoint'), [],
+      src);
+  }
+});
+
+test('an image with no semantics is the Dart missing-alt', () => {
+  const found = audit('lib/hero.dart', "Image.asset('assets/hero.png')");
+  const f = found.find((x) => x.rule === 'image-missing-semantics');
+  assert.ok(f);
+  assert.equal(f.severity, 'error');
+});
+
+test('semanticLabel and excludeFromSemantics are both accepted', () => {
+  // excludeFromSemantics is the deliberate decorative marker — alt="" in Dart.
+  for (const src of [
+    "Image.asset('a.png', semanticLabel: 'A chart of monthly revenue')",
+    "Image.network(url, excludeFromSemantics: true)",
+  ]) {
+    assert.deepEqual(
+      rules('lib/hero.dart', src).filter((r) => r === 'image-missing-semantics'),
+      [], src);
+  }
+});
+
+test('a nested call inside the arguments does not truncate the scan', () => {
+  // The reason dartCallArgs tracks paren depth: a naive /\([^)]*\)/ stops at
+  // the first inner close paren and reports a labelled image as unlabelled.
+  const src = "Image.asset(join('assets', 'hero.png'), semanticLabel: 'Team photo')";
+  assert.deepEqual(
+    rules('lib/hero.dart', src).filter((r) => r === 'image-missing-semantics'), []);
+  assert.equal(dartCallArgs('f(a, g(b), c)', 1), 'a, g(b), c');
+});
+
+test('GestureDetector with no Semantics anywhere in the file warns', () => {
+  const found = audit('lib/tile.dart', 'GestureDetector(onTap: open, child: Text("Open"))');
+  const f = found.find((x) => x.rule === 'gesture-without-semantics');
+  assert.ok(f);
+  assert.equal(f.severity, 'warn');
+});
+
+test('a wrapped GestureDetector, and InkWell, are both correct', () => {
+  assert.deepEqual(
+    rules('lib/tile.dart',
+      'Semantics(button: true, label: "Open", child: GestureDetector(onTap: open))')
+      .filter((r) => r === 'gesture-without-semantics'), []);
+  // InkWell carries its own semantics, so it was never in scope.
+  assert.deepEqual(
+    rules('lib/tile.dart', 'InkWell(onTap: open, child: Text("Open"))')
+      .filter((r) => r === 'gesture-without-semantics'), []);
+});
+
+test('a GestureDetector with no onTap is not a control', () => {
+  assert.deepEqual(
+    rules('lib/pan.dart', 'GestureDetector(onPanUpdate: move, child: Canvas())')
+      .filter((r) => r === 'gesture-without-semantics'), []);
+});
+
+test('Dart files are never run through the web rules', () => {
+  // `100vh` in a Dart string, or the word Image, must not pull in a rule
+  // written for JSX.
+  const found = audit('lib/x.dart', 'const s = "100vh"; // <img>');
+  assert.deepEqual(found.filter((f) => f.rule === 'viewport-height-unit'), []);
+  assert.deepEqual(found.filter((f) => f.rule === 'img-missing-alt'), []);
+});
+
+test('design-ok suppresses the Dart rules too', () => {
+  assert.deepEqual(
+    rules('lib/card.dart', 'color: Colors.blue, // design-ok')
+      .filter((r) => r === 'bare-material-colour'), []);
 });

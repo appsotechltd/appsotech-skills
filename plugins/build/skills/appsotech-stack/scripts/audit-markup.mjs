@@ -366,6 +366,114 @@ function ambientMotionNoReducedMotion(file, content, lines) {
   }];
 }
 
+// --- Dart ------------------------------------------------------------------
+//
+// Flutter is a first-class surface here and light/dark is a hard requirement
+// on it, but until these existed a .dart file was checked for exactly one
+// thing — Color(0x…) literals — and passed everything else by default.
+
+// Reads the argument list of a Dart call, tracking paren depth so a nested
+// call or a trailing widget tree does not truncate it.
+export function dartCallArgs(content, openIndex) {
+  let depth = 0;
+  for (let i = openIndex; i < content.length; i++) {
+    const c = content[i];
+    if (c === '(') depth++;
+    else if (c === ')') {
+      depth--;
+      if (depth === 0) return content.slice(openIndex + 1, i);
+    }
+  }
+  return content.slice(openIndex + 1);
+}
+
+// D1. A Material colour constant instead of the frozen palette.
+//
+// The Dart equivalent of a hardcoded hex, and far more common, because
+// `Colors.blue` reads like an API rather than a literal. It is not one: it is
+// a fixed value that ignores the palette and does not change in dark mode.
+function bareMaterialColour(file, content, lines) {
+  const out = [];
+  for (const m of content.matchAll(/\bColors\.([A-Za-z][A-Za-z0-9]*)/g)) {
+    // Colors.transparent is a structural value, not a palette choice.
+    if (m[1] === 'transparent') continue;
+    const line = lineOf(content, m.index);
+    if (suppressed(lines, line)) continue;
+    out.push({
+      rule: 'bare-material-colour', severity: 'error', file, line, text: m[0],
+      why: 'a fixed Material colour ignores the frozen palette and does not change in dark mode — use AppColors or Theme.of(context).colorScheme',
+    });
+  }
+  return out;
+}
+
+// D2. Screen size read once and used as a breakpoint.
+//
+// MediaQuery gives the WINDOW, so this is wrong inside anything that is not
+// full width — a pane, a dialog, a split view — and it does not rebuild on the
+// widget's own resize. LayoutBuilder gives the box the widget actually has.
+function mediaQueryBreakpoint(file, content, lines) {
+  const out = [];
+  const re = /MediaQuery\s*\.\s*(?:of\s*\([^)]*\)\s*\.\s*size|sizeOf\s*\([^)]*\))\s*\.\s*(width|height)\s*[<>]=?\s*[\d.]+/g;
+  for (const m of content.matchAll(re)) {
+    const line = lineOf(content, m.index);
+    if (suppressed(lines, line)) continue;
+    out.push({
+      rule: 'mediaquery-breakpoint', severity: 'warn', file, line,
+      text: m[0].slice(0, 50),
+      why: 'MediaQuery reports the window, not this widget\'s box — use LayoutBuilder so a pane or dialog breaks at its own width',
+    });
+  }
+  return out;
+}
+
+// D3. An image with nothing for a screen reader.
+function imageMissingSemantics(file, content, lines) {
+  const out = [];
+  for (const m of content.matchAll(/\bImage\s*\.\s*(asset|network|file|memory)\s*\(/g)) {
+    const open = m.index + m[0].length - 1;
+    const args = dartCallArgs(content, open);
+    // excludeFromSemantics is the deliberate "this is decorative" marker —
+    // the Dart equivalent of alt="", and equally correct.
+    if (/semanticLabel\s*:|excludeFromSemantics\s*:\s*true/.test(args)) continue;
+    const line = lineOf(content, m.index);
+    if (suppressed(lines, line)) continue;
+    out.push({
+      rule: 'image-missing-semantics', severity: 'error', file, line,
+      text: `Image.${m[1]}(…)`,
+      why: 'no semanticLabel — give it one, or excludeFromSemantics: true if it is decorative',
+    });
+  }
+  return out;
+}
+
+// D4. A tap handler on a widget that announces nothing.
+//
+// GestureDetector draws no ink and exposes no semantics of its own, so a
+// screen reader finds a box with no role. InkWell, IconButton and the rest
+// carry their own semantics and are not flagged.
+function gestureWithoutSemantics(file, content, lines) {
+  if (/\bSemantics\s*\(/.test(content)) return [];
+  const out = [];
+  for (const m of content.matchAll(/\bGestureDetector\s*\(/g)) {
+    const args = dartCallArgs(content, m.index + m[0].length - 1);
+    if (!/onTap\s*:/.test(args)) continue;
+    const line = lineOf(content, m.index);
+    if (suppressed(lines, line)) continue;
+    out.push({
+      rule: 'gesture-without-semantics', severity: 'warn', file, line,
+      text: 'GestureDetector(onTap: …)',
+      why: 'exposes no role to a screen reader — wrap in Semantics(button: true, label: …), or use InkWell',
+    });
+  }
+  return out;
+}
+
+const DART_RULES = [
+  bareMaterialColour, mediaQueryBreakpoint, imageMissingSemantics,
+  gestureWithoutSemantics,
+];
+
 const WEB_RULES = [
   hardcodedColour, dynamicTailwind, nonSemanticClick, imgMissingAlt,
   inputMissingLabel, bannedDisplayFont, outlineNoneNoFocus, layoutAnimation,
@@ -375,7 +483,12 @@ const WEB_RULES = [
 export function auditFile({ path, content }) {
   const ext = extname(path);
   const lines = content.split('\n');
-  if (DART_EXT.has(ext)) return hardcodedColour(path, content, lines, ext);
+  if (DART_EXT.has(ext)) {
+    return [
+      ...hardcodedColour(path, content, lines, ext),
+      ...DART_RULES.flatMap((rule) => rule(path, content, lines)),
+    ].sort((a, b) => a.line - b.line);
+  }
   return WEB_RULES.flatMap((rule) =>
     rule.length === 4 ? rule(path, content, lines, ext) : rule(path, content, lines));
 }

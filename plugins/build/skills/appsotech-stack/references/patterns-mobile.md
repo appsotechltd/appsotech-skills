@@ -7,13 +7,25 @@ type pairing — expressed as `ThemeData` instead of CSS custom properties.
 ## One palette, two languages
 
 `design/tokens.css` is the master. Flutter cannot read it, so the freeze step
-also writes `design/tokens.dart` from the same values. Generated from the
-master, never hand-typed alongside it — two hand-maintained copies drift, and
-the drift shows up as an app that is subtly a different product from its own
-website.
+generates the Dart copy from the same values:
+
+```
+node "$TOKENSDART" design/tokens.css -o apps/mobile/lib/design/tokens.dart
+```
+
+**Never hand-typed alongside the CSS**, and the generator's `--check` mode is
+in the gate for exactly that reason: two hand-maintained copies drift, and the
+drift shows up as an app that is subtly a different product from its own
+website. It lands inside `lib/` because Dart resolves library code relative to
+the package, so a file at the repository root cannot be imported here.
+
+`.dark` normally lists only the tokens it *overrides* — that is what the
+cascade is for — so the generator layers dark onto light rather than emitting
+dark's own keys alone. A generator that did the latter would leave holes where
+the CSS has none.
 
 ```dart
-// design/tokens.dart — generated from design/tokens.css. Do not edit by hand.
+// apps/mobile/lib/design/tokens.dart — generated. Do not edit by hand.
 import 'package:flutter/material.dart';
 
 class AppColors {

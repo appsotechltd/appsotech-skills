@@ -88,7 +88,7 @@ triggered by a new surface.
 |---|---|---|
 | `design/design-system.md` | Master — style, palette, fonts, rationale | explicit re-selection only |
 | `design/tokens.css` | The tokens, elite's naming | regenerated from the Master |
-| `design/tokens.dart` | Same values for Flutter, generated | regenerated from the Master |
+| `apps/mobile/lib/design/tokens.dart` | Same values for Flutter, **generated** | `node "$TOKENSDART"` — never by hand |
 | `design/overrides.md` | Per-surface deviations | normal work |
 
 Tokens are **per product, not per surface**. `webapp` and `admin-web` share one
@@ -110,9 +110,12 @@ for base in \
   ".claude/skills/appsotech-stack/scripts"; do
   [ -f "$base/contrast.mjs" ] && SCRIPTS="$base" && break
 done
+GATE="$SCRIPTS/gate.mjs"
 CONTRAST="$SCRIPTS/contrast.mjs"
 AUDIT="$SCRIPTS/audit-markup.mjs"
 RESPONSIVE="$SCRIPTS/responsive-check.mjs"
+TOKENSDART="$SCRIPTS/tokens-dart.mjs"
+FREEZE="$SCRIPTS/freeze-check.mjs"
 SCAFFOLD="$SCRIPTS/scaffold.mjs"
 echo "${SCRIPTS:-NOT FOUND}"
 ```
@@ -295,10 +298,18 @@ Read `references/design-tokens.md`, then write:
   abstract shape derived from what the product does, per `references/hero.md`.
   Unrecorded, the next session invents a different one, which is the palette
   drift problem wearing a different hat.
-- `design/tokens.dart` — **only if there is a Flutter surface.** Generated from
-  `tokens.css`, never hand-maintained beside it: two hand-kept copies drift,
-  and the drift shows as an app that is subtly a different product from its own
-  website.
+- `apps/mobile/lib/design/tokens.dart` — **only if there is a Flutter
+  surface**, and never by hand:
+
+  ```
+  node "$TOKENSDART" design/tokens.css -o apps/mobile/lib/design/tokens.dart
+  ```
+
+  It lives inside the Flutter package because Dart resolves library code
+  relative to `lib/` — a file at the repository root is not importable from
+  `apps/mobile`. The `design/` segment in the path is also what keeps the
+  markup audit's hardcoded-colour rule off it, which is right: this is the one
+  place raw colour belongs on the Flutter side.
 
 Then gate it before committing:
 
@@ -309,6 +320,20 @@ node "$CONTRAST" design/tokens.css
 Non-zero exit means a pair is below the floor. **Fix the token and re-run.**
 Catching this here costs one token; catching it in Phase 9 costs an audit of
 every component that consumed it.
+
+Then record the freeze, which is what makes the frozen design rule checkable
+rather than merely stated:
+
+```
+node "$FREEZE" design/tokens.css design/design-system.md --record
+```
+
+That writes a fingerprint of the palette into `design-system.md`. From then on
+the gate answers one question every run: does `tokens.css` still hold the
+palette this document describes? A silent token edit leaves the rationale
+explaining colours that are no longer there, and the next session inherits an
+argument for a design it cannot see. **Re-record only alongside a restyle the
+user actually asked for** — never to make a red gate go green.
 
 **No palette values inline in markup, ever.**
 
@@ -376,10 +401,22 @@ Do not report anything as built on the strength of having written it.
 | Vite | `npm run build && npm run type-check && npm run test` |
 | Flutter | `flutter analyze && flutter test` |
 | Compose | `docker compose -f deploy/<slug>.compose.yml config` |
-| Design tokens | `node "$CONTRAST" design/tokens.css` |
-| UI source | `node "$AUDIT" apps/<surface>/src` |
-| Rendered UI (Vite) | `node "$RESPONSIVE" --serve apps/<surface>/dist` |
-| Rendered UI (Next.js) | `npm run start`, then `node "$RESPONSIVE" http://localhost:<port>` |
+| **Design, all of it** | `node "$GATE" --serve apps/<surface>/dist` |
+
+`gate.mjs` finds `design/tokens.css`, `design/design-system.md`, the Flutter
+token copy and every `apps/*/src` by convention, so only a rendered target has
+to be named — a static build with `--serve`, or `--url` for a Next.js surface
+after `npm run start`. It runs contrast, the freeze check, the `tokens.dart`
+drift check, the markup audit and the rendered checks, and prints one summary.
+
+**A step it could not run is reported `SKIP`, never counted as a pass**, and
+the run says so again at the end. That is the whole reason it exists: nine
+separate commands get run as six, and the three nobody ran look like silence
+rather than absence.
+
+The individual scripts still work and are worth reaching for while fixing one
+thing — `node "$CONTRAST" design/tokens.css`, `node "$AUDIT" apps/<surface>/src`,
+`node "$RESPONSIVE" --serve <dir>`.
 
 **Any surface under `apps/` is a UI surface, so the design rows apply.** If
 `design/tokens.css` does not exist, Phases 5–6 never ran — do them before

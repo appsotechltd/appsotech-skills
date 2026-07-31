@@ -87,9 +87,15 @@ filesystem still produces a compliant, tokenised interface.
 
 ### The gate
 
-Four scripts make it mechanical rather than aspirational; **17 checklist items
+Seven scripts make it mechanical rather than aspirational; **26 checklist items
 are marked `[auto]`**, and the rest stay human because they are judgement
 calls, not leftovers.
+
+`scripts/gate.mjs` is the one command that runs the rest. It discovers `design/`
+and every `apps/*/src` from the conventions, so only a rendered target has to be
+named. A step it could not run prints `SKIP` and is never folded into the pass
+count — a partial run reported as a clean one is worse than no gate, because it
+is believed.
 
 `scripts/scaffold.mjs` allocates the product's block of ten development ports
 and its own PostgreSQL database, then writes everything the conventions decide
@@ -121,15 +127,51 @@ instead of behind `next/dynamic`, and a canvas animation with no
 loop as well as WebGL, since a rule that only knew about `three` would miss the
 case the skill actually prescribes.
 
+Flutter used to get one of those rules and pass everything else by default. It
+now has its own four: a bare `Colors.blue` (the Dart hardcoded colour, and more
+common than a hex because it reads like an API rather than a literal),
+`MediaQuery.size` used as a breakpoint where `LayoutBuilder` belongs, an
+`Image.*` with neither `semanticLabel` nor `excludeFromSemantics`, and a
+`GestureDetector` tap handler that exposes no role to a screen reader.
+
 `scripts/responsive-check.mjs` loads the page in Chromium at 320, 768 and 1280
-in both colour schemes. It catches what reading a stylesheet cannot: a
-fixed-width element pushing the page sideways at 320, tap targets under 44px as
-actually laid out, form controls under 16px (below which iOS zooms on focus),
-and a dark block that was written but never wired — detected by comparing the
-rendered body under each scheme. Content inside an `overflow-x:auto` container
-and inline links in body copy are exempt, because both are the prescribed
-pattern. Playwright is not bundled: the script resolves it from the project or
-a global install and exits 3 with an explanation when absent.
+in both colour schemes, plus **740×360 — a phone held sideways**, which is the
+only probe short enough to catch a `height: 100vh` hero eating its own CTA. It
+catches what reading a stylesheet cannot: a fixed-width element pushing the page
+sideways at 320, tap targets under 44px as actually laid out, form controls
+under 16px (below which iOS zooms on focus), and a dark block that was written
+but never wired — detected by comparing the rendered body under each scheme.
+
+It also checks **contrast as painted**, which is a different question from the
+one `contrast.mjs` answers. That one checks token against token in the file; it
+cannot see a token used against a background it was never paired with, a
+foreground at reduced opacity, or a dark rule overridden by a later rule of
+equal specificity. Backgrounds are composited through transparency to get the
+real pair. Anything that cannot be resolved — text on a photograph or a
+gradient — is reported for a human and **never fails the run**, because a
+contrast checker that cries wolf over every gradient gets switched off in a
+week.
+
+Content inside an `overflow-x:auto` container and inline links in body copy are
+exempt, because both are the prescribed pattern. Playwright is not bundled: the
+script resolves it from the project or a global install and exits 3 with an
+explanation when absent — which `gate.mjs` reports as a skip, not a pass.
+
+`scripts/tokens-dart.mjs` generates the Flutter palette from the CSS master.
+The skill always said `tokens.dart` was "generated, never hand-maintained
+beside it"; until this existed nothing generated it, so the rule was violated in
+the same breath it was stated. `--check` is in the gate, because a generator
+nobody re-runs is the same as no generator. `.dark` normally lists only what it
+*overrides*, so dark is layered onto light rather than emitted alone — the
+alternative leaves holes where the CSS has none.
+
+`scripts/freeze-check.mjs` makes the frozen design rule checkable. It records a
+fingerprint of the palette inside `design-system.md`, then answers one question
+on every run: does `tokens.css` still hold the palette that document describes?
+Reordering and reformatting are not restyles and do not move the fingerprint; a
+changed value does. A silent token edit otherwise leaves the written rationale
+explaining colours that are no longer there, and the next session inherits an
+argument for a design it cannot see.
 
 There is no separate gateway. Coolify's Traefik is the only ingress — a proxy
 doing on-demand TLS would have to own `:443`, which Traefik already does.

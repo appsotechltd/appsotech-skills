@@ -30,6 +30,20 @@ export const VIEWPORTS = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 
+// A width probe answers "does this overflow sideways". This one answers a
+// different question — "does anything get cut off vertically" — so it is kept
+// separate rather than appended to the list above. A phone held sideways is
+// around 360px tall, and every viewport above is tall enough to hide the
+// problem completely.
+export const SHORT_VIEWPORT = { name: 'landscape', width: 740, height: 360 };
+
+// What the CLI actually runs when no --widths override is given.
+export const PROBES = [...VIEWPORTS, SHORT_VIEWPORT];
+
+// Below this height the short-viewport checks turn on, in the page and in the
+// runner alike.
+export const SHORT_MAX = 480;
+
 export const TAP_MIN = 44;
 export const MOBILE_MAX = 640;
 // Below 16px, iOS zooms the viewport when a form control takes focus. This is
@@ -87,7 +101,13 @@ export function safeJoin(root, urlPath) {
   // A trailing slash survives normalize(), so "/" resolves to "<root>/" and
   // compares unequal to the root itself. Stripping it keeps the return value
   // canonical and the containment check a plain string comparison.
-  const full = normalize(join(root, decoded)).replace(/\/+$/, '') || '/';
+  // Both sides must be absolute or the comparison is meaningless: with a
+  // RELATIVE root — `--serve apps/webapp/dist`, which is what the skill
+  // documents — a normalize()d join stays relative while the base resolves to
+  // an absolute path, so nothing ever matches and every request 403s.
+  // resolve() also collapses `..`, which is what makes the containment check
+  // an escape check.
+  const full = resolve(join(root, decoded)).replace(/\/+$/, '') || '/';
   const base = resolve(root).replace(/\/+$/, '') || '/';
   // The `base + '/'` prefix matters: a sibling named `<base>-evil` starts with
   // base as a string but is not inside it.
@@ -253,10 +273,169 @@ export function analysePage() {
     }
   }
 
+  // 5. A short viewport — a phone in landscape is around 360px tall.
+  //
+  // Every other probe here is tall, so a hero built as `height: 100vh` with
+  // overflow hidden looks fine at 320×640 and eats its own CTA at 740×360.
+  // The finding is deliberately narrow: a box whose CONTENT is cut off. A
+  // `min-height` hero that simply grows taller than the screen is correct and
+  // is not reported, because scrolling is the right answer there.
+  const vh = window.innerHeight;
+  if (vh <= 480) {
+    for (const el of document.querySelectorAll('body *')) {
+      if (!visible(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.height < vh * 0.9) continue;
+      const s = getComputedStyle(el);
+      const clips = s.overflowY === 'hidden' || s.overflowY === 'clip';
+      if (!clips) continue;
+      if (el.scrollHeight <= el.clientHeight + 2) continue;
+      findings.push({
+        rule: 'short-viewport-clip', severity: 'error',
+        text: `${describe(el)} shows ${Math.round(r.height)}px of ${el.scrollHeight}px`,
+        why: `content is cut off at ${vw}×${vh} — use min-height, not height, and 100svh rather than 100vh`,
+      });
+      if (findings.filter((f) => f.rule === 'short-viewport-clip').length >= 5) break;
+    }
+
+    // Fixed chrome anchored top and bottom. On a tall phone a header plus a
+    // bottom bar is fine; in landscape the same two can leave a reading slot
+    // barely taller than themselves.
+    let chrome = 0;
+    const bars = [];
+    for (const el of document.querySelectorAll('body *')) {
+      if (!visible(el)) continue;
+      const s = getComputedStyle(el);
+      if (s.position !== 'fixed' && s.position !== 'sticky') continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < vw * 0.8) continue;
+      const anchored = r.top <= 4 || Math.abs(r.bottom - vh) <= 4;
+      if (!anchored) continue;
+      chrome += r.height;
+      bars.push(`${describe(el)} ${Math.round(r.height)}px`);
+    }
+    if (chrome > vh * 0.5 && bars.length > 0) {
+      findings.push({
+        rule: 'short-viewport-chrome', severity: 'warn',
+        text: `fixed chrome takes ${Math.round(chrome)}px of ${vh}px — ${bars.join(', ')}`,
+        why: 'over half a landscape phone is chrome — collapse or hide it below a height breakpoint',
+      });
+    }
+  }
+
+  // 6. Rendered contrast.
+  //
+  // contrast.mjs checks token against token in the FILE. It cannot see a
+  // token used against a background it was never paired with, a foreground at
+  // reduced opacity, or text sitting on a photograph. This computes the
+  // effective pair as the browser actually painted it.
+  //
+  // Anything it cannot resolve with certainty becomes advisory rather than a
+  // failure — a contrast checker that cries wolf over every gradient is one
+  // that gets switched off in a week.
+  const parseRgb = (s) => {
+    const m = String(s).match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+    if (p.length < 3 || p.slice(0, 3).some((n) => !Number.isFinite(n))) return null;
+    return { r: p[0], g: p[1], b: p[2], a: p.length > 3 && Number.isFinite(p[3]) ? p[3] : 1 };
+  };
+  const lum = ({ r, g, b }) => {
+    const f = (c) => {
+      const n = c / 255;
+      return n <= 0.03928 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  const ratioOf = (a, b) => {
+    const la = lum(a);
+    const lb = lum(b);
+    const [hi, lo] = la > lb ? [la, lb] : [lb, la];
+    return Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100;
+  };
+  const over = (fg, bg) => ({
+    r: fg.r * fg.a + bg.r * (1 - fg.a),
+    g: fg.g * fg.a + bg.g * (1 - fg.a),
+    b: fg.b * fg.a + bg.b * (1 - fg.a),
+    a: 1,
+  });
+
+  // Walks up compositing background layers until something opaque is reached.
+  // Stops and reports uncertainty at an image, a gradient or a translucent
+  // ancestor, because none of those can be reduced to one colour.
+  const effectiveBackground = (el) => {
+    const stack = [];
+    for (let p = el; p && p !== document.documentElement.parentElement; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      if (s.backgroundImage && s.backgroundImage !== 'none') {
+        return { uncertain: 'sits on an image or gradient' };
+      }
+      if (p !== el && parseFloat(s.opacity) < 1) {
+        return { uncertain: 'an ancestor is translucent' };
+      }
+      const c = parseRgb(s.backgroundColor);
+      if (c && c.a > 0) {
+        stack.push(c);
+        if (c.a >= 1) break;
+      }
+    }
+    let base = { r: 255, g: 255, b: 255, a: 1 };
+    for (let i = stack.length - 1; i >= 0; i--) base = over(stack[i], base);
+    return { colour: base };
+  };
+
+  const contrastSeen = new Set();
+  let advisories = 0;
+  for (const el of document.querySelectorAll('body *')) {
+    if (findings.filter((f) => f.rule === 'rendered-contrast').length >= 10) break;
+    if (!visible(el)) continue;
+    const own = Array.from(el.childNodes)
+      .filter((n) => n.nodeType === 3)
+      .map((n) => n.textContent.trim())
+      .join(' ')
+      .trim();
+    if (own.length < 2) continue;
+
+    const s = getComputedStyle(el);
+    const fgRaw = parseRgb(s.color);
+    if (!fgRaw) continue;
+    const bg = effectiveBackground(el);
+    const key = `${describe(el)}|${own.slice(0, 24)}`;
+    if (contrastSeen.has(key)) continue;
+    contrastSeen.add(key);
+
+    if (bg.uncertain) {
+      if (advisories >= 3) continue;
+      advisories++;
+      findings.push({
+        rule: 'contrast-unverifiable', severity: 'warn',
+        text: `${describe(el)} — ${bg.uncertain}`,
+        why: 'contrast could not be computed here — check by hand that the text holds 4.5:1 across the whole box, with a scrim if needed',
+      });
+      continue;
+    }
+
+    // WCAG 2.1: large text is 18pt (24px), or 14pt (18.66px) at 700+.
+    const size = parseFloat(s.fontSize);
+    const weight = parseInt(s.fontWeight, 10) || 400;
+    const large = size >= 24 || (size >= 18.66 && weight >= 700);
+    const min = large ? 3 : 4.5;
+    const fg = fgRaw.a < 1 ? over(fgRaw, bg.colour) : fgRaw;
+    const ratio = ratioOf(fg, bg.colour);
+    if (ratio >= min) continue;
+
+    findings.push({
+      rule: 'rendered-contrast', severity: 'error',
+      text: `${describe(el)} ${ratio}:1 (needs ${min})`,
+      why: `text as painted is below the floor${fgRaw.a < 1 ? ' — the foreground is translucent, which the token file cannot show' : ''}`,
+    });
+  }
+
   return {
     findings,
     docWidth,
     viewportWidth: vw,
+    viewportHeight: vh,
     bodyBackground: getComputedStyle(document.body).backgroundColor,
     bodyColor: getComputedStyle(document.body).color,
   };
@@ -387,7 +566,7 @@ if (isMain) {
 
   const widths = flag('--widths', null)
     ? flag('--widths', '').split(',').map((w) => ({ name: `${w.trim()}px`, width: Number(w.trim()), height: 900 }))
-    : VIEWPORTS;
+    : PROBES;
   if (widths.some((v) => !Number.isFinite(v.width) || v.width < 200)) {
     console.error('--widths must be comma-separated pixel numbers ≥ 200');
     process.exit(2);
