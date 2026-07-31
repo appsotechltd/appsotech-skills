@@ -48,6 +48,16 @@ every phase, an existing one skips allocation, and a standalone screen or
 single-file prototype skips the scaffolding entirely and goes straight to
 design. Asking for a mockup never produces a port block and a Coolify stack.
 
+The fourth route is **not this skill**. The description is deliberately pushy
+about triggering, so it will fire on "let's build a marketplace" from someone
+who wanted to think rather than to ship — and Phases 1–2 commit a slug that
+becomes a DNS label, a Go module path and a database name, after which Phase 6
+freezes a palette that only an explicit restyle unfreezes. When the open
+question is *whether* or *what* to build, the run says so and stops rather than
+scaffolding to avoid an awkward pause. A throwaway screen made to think against
+is not that case — that is a prototype, and prototypes are instruments of
+deciding.
+
 ### Design
 
 Two authorities that do not overlap: [`ui-ux-pro-max`][promax] generates style,

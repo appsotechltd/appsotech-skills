@@ -128,23 +128,32 @@ checks silently.
 
 ## Phase 0 — What kind of work is this?
 
-Three routes. Decide before doing anything, because two of them skip most of
-the scaffolding.
+Four answers, and one of them is "not this skill". Decide before doing
+anything, because three of them skip most of the scaffolding.
 
 | The request | Route |
 |---|---|
+| Whether to build it, what it should be, who it is for | **None** — this is upstream. Stop. |
 | A new product or project | **A** — every phase, 1 → 9 |
 | A feature or surface in an existing product | **B** — skip Phases 1–3, start at 4 |
 | A standalone screen, mockup or single-file prototype | **C** — skip Phases 1–4 entirely, start at 5 |
 
-**Route C matters.** "Make me a prototype" or "build me a login screen" is not
-a request for a port block, a database name or a Coolify stack. Go straight to
-the design phases, produce the screen, and run the gate. Do not scaffold a
-product around a mockup.
+**Route None matters most, because the description above is deliberately pushy
+and will fire on "let's build a marketplace" from someone who wanted to think,
+not to ship.** Phases 1–2 commit a slug that becomes a DNS label, a Go module
+path *and* a database name; Phase 6 then freezes a palette only an explicit
+restyle unfreezes. Committing that for someone still deciding what the product
+is costs more to undo than to defer. Say so and stop — hand over to a
+discovery skill if one is available, otherwise ask what they want built.
+**Never scaffold to avoid an awkward pause.**
 
-Route B: an existing product already has its allocation and its frozen design
-system. Read `design/design-system.md` and `docs/ports-and-databases.md` rather
-than regenerating either.
+It does not apply to a throwaway screen made to think *against* — that is
+Route C, a prototype being an instrument of deciding rather than something you
+decide before it. Nor to a decision already made, however it was reached.
+
+Route B: an existing product already has its allocation, its domain and its
+frozen design system. Read `docs/domain.md`, `design/design-system.md` and
+`docs/ports-and-databases.md` rather than regenerating any of them.
 
 ## Phase 1 — Scope *(Route A)*
 
@@ -232,6 +241,13 @@ change the direct `require` block.
 
 ## Phase 4 — Domain *(Routes A and B)*
 
+**If `docs/domain.md` exists, read it and use it**, and ask only about what it
+leaves open. Re-interrogating someone about entities they wrote down last week
+is the same failure as regenerating a frozen palette. Read any brief,
+one-pager or spec in `docs/` first for the same reason — a brief settles what
+the product is and who it is for, which shortens this phase without replacing
+it.
+
 Find out what the product actually does. One focused round, then build.
 
 - **Entities and their relationships** — what exists, what owns what, what
@@ -241,7 +257,10 @@ Find out what the product actually does. One focused round, then build.
 - **The tenant boundary** — what "one organisation" means here.
 - **The one workflow that matters most** — build it end to end first.
 
-Write the answers to `docs/domain.md` before writing code.
+Write the answers to `docs/domain.md` before writing code. These four are
+design decisions about data, not product strategy: an upstream brainstorm
+produces a direction and a riskiest assumption, and none of that tells you what
+cascades on delete.
 
 ## Phase 5 — Design: select
 
@@ -461,9 +480,18 @@ Never invent a palette when `style-directions.md` covers the case.
 
 ## Boundary
 
-`13-layer-app-audit` is independent and must stay that way — it runs on
-inherited codebases that never touched this skill. This skill may reference the
-audit; **the audit never references this skill.**
+`appsotech-audit` is independent and must stay that way — it runs on inherited
+codebases that never touched this skill. This skill may reference the audit;
+**the audit never references this skill.**
+
+Anything upstream — brainstorming, discovery, a brief — is the same shape in
+the other direction. It decides *what* to build and *for whom*; this decides
+how it is wired and how it looks. **Upstream may reopen the product. It never
+reopens the stack**, from any source.
+
+That handoff is a **file, never a conversation**: sessions start fresh and
+remote, so a brainstorm ending in chat and a build starting tomorrow share
+nothing. It has to land in `docs/`, or Phase 4 will ask again and be right to.
 
 ## Attribution
 
