@@ -68,6 +68,17 @@ often to delete one. Durations and curves stay in `design-tokens.md`; motion.md
 says which to use where, because two timing tables is how a component ends up at
 160ms while a token says 150ms.
 
+`references/hero.md` covers the one place decorative motion and 3D are allowed:
+a hero on a public surface. It picks between mouse-reactive particles, an
+abstract 3D form, an image and type alone; derives the form from what the
+product actually does and **freezes it beside the palette**, so the next
+session inherits a shape rather than inventing one. The engine is decided
+rather than chosen — a 2D canvas for particle fields, React Three Fiber only
+where there is real geometry, since `three` is ~170KB gzipped and a field of
+drifting dots needs no scene graph. Signed-in surfaces get no canvas at all;
+ambient motion on a page someone opens every morning is a battery tax on
+somebody who has already bought the thing.
+
 Selection degrades in three tiers — query the script, invoke the skill by name,
 or fall back to twelve curated directions in `references/style-directions.md`.
 Only *style breadth* degrades: tokens, patterns, the accessibility floor and
@@ -76,7 +87,7 @@ filesystem still produces a compliant, tokenised interface.
 
 ### The gate
 
-Four scripts make it mechanical rather than aspirational; **14 checklist items
+Four scripts make it mechanical rather than aspirational; **17 checklist items
 are marked `[auto]`**, and the rest stay human because they are judgement
 calls, not leftovers.
 
@@ -103,7 +114,12 @@ component with a hardcoded `#3B82F6` passes a token check trivially, because
 the token check never sees the component. Precision is the design constraint:
 `hsl(var(--token))`, a labelled input, a `role`+`tabIndex`+key-handler div and
 Arial as a fallback are all explicitly exempt, because a linter that fires on
-correct code is one people learn to skip.
+correct code is one people learn to skip. Three of its eleven rules serve the
+hero: `100vh` where `100svh` was meant, `three` imported into a Next route file
+instead of behind `next/dynamic`, and a canvas animation with no
+`prefers-reduced-motion` path — the last catching a hand-rolled 2D particle
+loop as well as WebGL, since a rule that only knew about `three` would miss the
+case the skill actually prescribes.
 
 `scripts/responsive-check.mjs` loads the page in Chromium at 320, 768 and 1280
 in both colour schemes. It catches what reading a stylesheet cannot: a

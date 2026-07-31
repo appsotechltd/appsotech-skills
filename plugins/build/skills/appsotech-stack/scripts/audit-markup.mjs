@@ -279,9 +279,97 @@ function layoutAnimation(file, content, lines) {
   return out;
 }
 
+// 9. 100vh where the small viewport was meant.
+//
+// On iOS 100vh is TALLER than the visible viewport, so a full-screen hero puts
+// its CTA below the fold on exactly the device where that costs most. This is
+// a warning, not an error: 100vh is defensible on a desktop-only app shell or
+// a modal overlay, and a rule that fires on those teaches people to skip the
+// run. Tailwind's h-screen compiles to the same thing, which is where it will
+// actually appear in this stack.
+function viewportHeightUnit(file, content, lines) {
+  const out = [];
+  const patterns = [/\b100vh\b/g, /\b(?:min-|max-)?h-screen\b/g];
+  for (const re of patterns) {
+    for (const m of content.matchAll(re)) {
+      const line = lineOf(content, m.index);
+      if (suppressed(lines, line)) continue;
+      out.push({
+        rule: 'viewport-height-unit', severity: 'warn', file, line, text: m[0],
+        why: 'iOS makes 100vh taller than the visible viewport — use 100svh (or min-h-svh) for anything that must fit the fold',
+      });
+    }
+  }
+  return out;
+}
+
+// --- 3D and ambient motion --------------------------------------------------
+
+const THREE_IMPORT_RE =
+  /^\s*import\s+(?:[^;'"]*\s+from\s+)?['"](three|@react-three\/[\w-]+)['"]/m;
+
+// A Next.js route file: app/**/page.tsx, app/**/layout.tsx, or anything under
+// pages/. Everything else may legitimately import three at module scope,
+// because it is the component that next/dynamic loads.
+export function isNextRouteFile(path) {
+  const p = path.replace(/\\/g, '/');
+  if (/(^|\/)pages\/(?!api\/)/.test(p)) return true;
+  return /(^|\/)app\/.*\/(page|layout|template)\.[jt]sx?$/.test(p) ||
+    /(^|\/)app\/(page|layout|template)\.[jt]sx?$/.test(p);
+}
+
+// 10. three or R3F pulled into a route file's own bundle.
+function static3dImport(file, content, lines) {
+  if (!isNextRouteFile(file)) return [];
+  const m = content.match(THREE_IMPORT_RE);
+  if (!m) return [];
+  const line = lineOf(content, m.index);
+  if (suppressed(lines, line)) return [];
+  return [{
+    rule: 'static-3d-import', severity: 'error', file, line,
+    text: m[0].trim().slice(0, 60),
+    why: 'three is ~170KB gzipped and this puts it in the route\'s initial bundle — load the scene with next/dynamic(..., { ssr: false })',
+  }];
+}
+
+// A file that runs a canvas animation, by either engine: an R3F/three import,
+// or a 2D context driven by a rAF loop. rAF alone is not enough — it is used
+// for scroll throttling and measurement, neither of which is animation.
+export function canvasAnimationEvidence(content) {
+  const three = content.match(THREE_IMPORT_RE);
+  if (three) return { index: three.index, kind: 'three' };
+  const ctx = content.match(/\.getContext\s*\(/);
+  if (ctx && /requestAnimationFrame/.test(content)) {
+    return { index: ctx.index, kind: 'canvas-2d' };
+  }
+  return null;
+}
+
+// 11. Ambient motion with no reduced-motion path.
+//
+// hero.md departs from motion.md here: decorative motion goes to ZERO under
+// prefers-reduced-motion rather than being softened, because continuous
+// background movement is what provokes vestibular symptoms and it carries no
+// information. The prescribed answer — `const reduce = useReducedMotion()`
+// inside the scene component — satisfies this rule, which is the test any
+// rule here has to pass.
+function ambientMotionNoReducedMotion(file, content, lines) {
+  const evidence = canvasAnimationEvidence(content);
+  if (!evidence) return [];
+  if (/prefers-reduced-motion|useReducedMotion/.test(content)) return [];
+  const line = lineOf(content, evidence.index);
+  if (suppressed(lines, line)) return [];
+  return [{
+    rule: 'ambient-motion-no-reduced-motion', severity: 'error', file, line,
+    text: evidence.kind === 'three' ? 'three/R3F scene' : 'canvas + requestAnimationFrame',
+    why: 'continuous decorative motion with no prefers-reduced-motion path — ambient motion goes to zero, not merely gentler',
+  }];
+}
+
 const WEB_RULES = [
   hardcodedColour, dynamicTailwind, nonSemanticClick, imgMissingAlt,
   inputMissingLabel, bannedDisplayFont, outlineNoneNoFocus, layoutAnimation,
+  viewportHeightUnit, static3dImport, ambientMotionNoReducedMotion,
 ];
 
 export function auditFile({ path, content }) {

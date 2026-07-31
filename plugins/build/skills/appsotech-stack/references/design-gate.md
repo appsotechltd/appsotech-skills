@@ -59,6 +59,8 @@ which is a decision someone can review — deleting a rule is not.
 - `scale(0)` — nothing in the real world appears out of nothing
 - Framer Motion `x`/`y`/`scale` shorthands — main thread, drops frames
 - Reading layout properties in loops (thrashing)
+- A WebGL canvas behind a signed-in surface — battery tax on a daily user
+- `100vh` on a full-screen hero — taller than the viewport on iOS
 - Missing `alt` text
 - Forms without labels
 - A hardcoded colour in a component instead of a token
@@ -122,6 +124,22 @@ which is a decision someone can review — deleting a rule is not.
 - [ ] **[auto]** No dynamic Tailwind class names
 - [ ] `cn()` used for class merging
 - [ ] Dark mode via CSS variables / `ThemeData`, not per-component branches
+
+### Hero *(public surfaces only)*
+
+- [ ] **[auto]** `100svh`, not `100vh` / `h-screen`, on anything that must fit the fold
+- [ ] **[auto]** `three`/R3F loaded with `next/dynamic(…, { ssr: false })`, never imported into a route file
+- [ ] **[auto]** Ambient motion has a `prefers-reduced-motion` path — and it goes to **zero**, not gentler
+- [ ] The `<h1>` is real server-rendered text, not drawn in the canvas
+- [ ] The canvas is not the LCP element; a hero *image* is, and carries `priority`
+- [ ] Loop pauses off-screen (`IntersectionObserver`) and on `visibilitychange`
+- [ ] `dpr` clamped — `<Canvas dpr={[1, 1.5]}>`
+- [ ] Pointer position written to a ref, never `setState` per `pointermove`
+- [ ] Without a fine pointer the field drifts on its own — never frozen
+- [ ] The form traces to `design/design-system.md`, not invented this session
+- [ ] Text over a hero image sits on a scrim that holds 4.5:1 across the whole
+      text box — `contrast.mjs` cannot sample a photograph
+- [ ] No canvas on `webapp` or `admin-web` at all
 
 ### UX integrity
 

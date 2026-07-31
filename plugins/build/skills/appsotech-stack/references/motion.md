@@ -135,6 +135,12 @@ transitions that aid comprehension; remove movement and position changes. An
 implementation that nukes all feedback is itself a finding — the user loses the
 signal that anything happened.
 
+**One exception, and it is the whole of `hero.md`:** ambient decoration — a
+particle field, a drifting 3D form — goes to *zero*. Continuous background
+movement is what provokes vestibular symptoms, and it carries no information,
+so removing it costs the user nothing. The rule above is about feedback;
+motion that merely pleases is removed rather than reduced.
+
 ```css
 @media (prefers-reduced-motion: reduce) {
   .element { transition: opacity var(--duration-fast) var(--ease-default); }

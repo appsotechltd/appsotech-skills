@@ -4,7 +4,9 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { auditFile, auditFiles, extractTags, collect } from '../scripts/audit-markup.mjs';
+import {
+  auditFile, auditFiles, extractTags, collect, isNextRouteFile,
+} from '../scripts/audit-markup.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'scripts', 'audit-markup.mjs');
 
@@ -273,5 +275,137 @@ test('every finding carries a rule, a line and a reason', () => {
   for (const f of found) {
     assert.ok(f.rule && f.file && f.line > 0 && f.why, JSON.stringify(f));
     assert.ok(['error', 'warn'].includes(f.severity));
+  }
+});
+
+// --- hero: viewport units ---------------------------------------------------
+
+test('100vh is flagged, and only as a warning', () => {
+  // Not an error: 100vh is defensible on a desktop app shell or a modal, and a
+  // rule that fires on those is one people learn to skip.
+  const found = audit('src/Hero.tsx', '<section style={{ minHeight: "100vh" }} />');
+  const f = found.find((x) => x.rule === 'viewport-height-unit');
+  assert.ok(f, 'expected the 100vh finding');
+  assert.equal(f.severity, 'warn');
+  assert.match(f.why, /svh/);
+});
+
+test('Tailwind h-screen and min-h-screen are the same bug and are caught', () => {
+  // This is where it actually appears in this stack — h-screen compiles to
+  // height: 100vh, so a rule that only reads raw CSS would miss every case.
+  assert.ok(rules('src/Hero.tsx', '<div className="min-h-screen" />')
+    .includes('viewport-height-unit'));
+  assert.ok(rules('src/Hero.tsx', '<div className="h-screen" />')
+    .includes('viewport-height-unit'));
+});
+
+test('the already-correct units are never flagged', () => {
+  // Firing on the prescribed answer is the failure mode that matters most.
+  for (const src of [
+    '<div style={{ minHeight: "100svh" }} />',
+    '<div style={{ minHeight: "100dvh" }} />',
+    '<div className="min-h-svh" />',
+    '<div className="min-h-dvh" />',
+  ]) {
+    assert.deepEqual(
+      rules('src/Hero.tsx', src).filter((r) => r === 'viewport-height-unit'), [],
+      `should not fire on ${src}`);
+  }
+});
+
+// --- hero: three in a route bundle ------------------------------------------
+
+test('three imported straight into a Next route file is an error', () => {
+  const found = audit('apps/tenant-web/app/page.tsx',
+    "import { Canvas } from '@react-three/fiber';\nexport default function P() { return <Canvas />; }");
+  const f = found.find((x) => x.rule === 'static-3d-import');
+  assert.ok(f, 'expected the static import finding');
+  assert.equal(f.severity, 'error');
+  assert.match(f.why, /next\/dynamic/);
+});
+
+test('the same import in a scene component is correct and is not flagged', () => {
+  // This is the file next/dynamic loads. Flagging it would flag the answer.
+  assert.deepEqual(
+    rules('apps/tenant-web/components/HeroScene.tsx',
+      "import { Canvas } from '@react-three/fiber';\nconst reduce = useReducedMotion();")
+      .filter((r) => r === 'static-3d-import'), []);
+});
+
+test('a route file that loads the scene dynamically passes', () => {
+  const src = "import dynamic from 'next/dynamic';\n" +
+    "const Scene = dynamic(() => import('./HeroScene'), { ssr: false });";
+  assert.deepEqual(
+    rules('app/page.tsx', src).filter((r) => r === 'static-3d-import'), []);
+});
+
+test('route-file detection covers layouts and pages/ but not pages/api', () => {
+  assert.equal(isNextRouteFile('app/page.tsx'), true);
+  assert.equal(isNextRouteFile('app/(marketing)/about/page.tsx'), true);
+  assert.equal(isNextRouteFile('app/layout.tsx'), true);
+  assert.equal(isNextRouteFile('apps/tenant-web/app/blog/layout.jsx'), true);
+  assert.equal(isNextRouteFile('pages/index.tsx'), true);
+  // An API route ships no client bundle, so the rule has nothing to say there.
+  assert.equal(isNextRouteFile('pages/api/hook.ts'), false);
+  assert.equal(isNextRouteFile('components/HeroScene.tsx'), false);
+  assert.equal(isNextRouteFile('src/app-shell/Widget.tsx'), false);
+});
+
+// --- hero: ambient motion and reduced motion --------------------------------
+
+test('an R3F scene with no reduced-motion path is an error', () => {
+  const found = audit('src/HeroScene.tsx',
+    "import { Canvas, useFrame } from '@react-three/fiber';\nexport const S = () => <Canvas />;");
+  const f = found.find((x) => x.rule === 'ambient-motion-no-reduced-motion');
+  assert.ok(f, 'expected the reduced-motion finding');
+  assert.equal(f.severity, 'error');
+  assert.match(f.why, /zero/);
+});
+
+test('a hand-rolled 2D particle canvas is caught too, not just WebGL', () => {
+  // The recommendation for plain particle fields is a 2D context and no
+  // library at all, so a rule that only knew about three would miss the case
+  // the skill actually prescribes.
+  const src = "const ctx = ref.current.getContext('2d');\n" +
+    'const loop = () => { draw(); requestAnimationFrame(loop); };';
+  assert.ok(rules('src/Particles.tsx', src)
+    .includes('ambient-motion-no-reduced-motion'));
+});
+
+test('the prescribed answer satisfies the rule, by either hook or media query', () => {
+  const scene = "import { Canvas } from '@react-three/fiber';\n";
+  assert.deepEqual(
+    rules('src/HeroScene.tsx', scene + 'const reduce = useReducedMotion();')
+      .filter((r) => r === 'ambient-motion-no-reduced-motion'), []);
+  assert.deepEqual(
+    rules('src/HeroScene.tsx',
+      scene + "const m = matchMedia('(prefers-reduced-motion: reduce)');")
+      .filter((r) => r === 'ambient-motion-no-reduced-motion'), []);
+});
+
+test('requestAnimationFrame without a canvas is not an animation', () => {
+  // rAF throttles scroll handlers and defers measurement far more often than
+  // it drives animation. Firing here would be the classic imprecise rule.
+  const src = 'const onScroll = () => requestAnimationFrame(() => measure());';
+  assert.deepEqual(
+    rules('src/useScroll.ts', src)
+      .filter((r) => r === 'ambient-motion-no-reduced-motion'), []);
+});
+
+test('a canvas drawn once, with no loop, is not ambient motion', () => {
+  const src = "const ctx = c.getContext('2d');\nctx.fillRect(0, 0, 10, 10);";
+  assert.deepEqual(
+    rules('src/Sparkline.tsx', src)
+      .filter((r) => r === 'ambient-motion-no-reduced-motion'), []);
+});
+
+test('design-ok suppresses each of the three hero rules', () => {
+  const cases = [
+    ['src/Hero.tsx', '<div className="min-h-screen" /> {/* design-ok */}', 'viewport-height-unit'],
+    ['app/page.tsx', "import { Canvas } from '@react-three/fiber'; // design-ok", 'static-3d-import'],
+    ['src/S.tsx', "import { Canvas } from '@react-three/fiber'; // design-ok", 'ambient-motion-no-reduced-motion'],
+  ];
+  for (const [path, src, rule] of cases) {
+    assert.deepEqual(rules(path, src).filter((r) => r === rule), [], rule);
   }
 });

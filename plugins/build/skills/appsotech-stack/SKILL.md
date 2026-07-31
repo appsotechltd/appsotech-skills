@@ -58,6 +58,7 @@ has the last word.
 | Type scale, line-height, 45–75ch measure, max 2–3 typefaces | **elite** |
 | Spacing scale and section rhythm | **elite** |
 | Motion — whether to animate at all, duration, easing, gestures | **elite's constraints + `references/motion.md`'s craft bar** — pro-max's GSAP presets are filtered through both |
+| Hero treatment — particles, 3D, image or type alone, and its budget | **`references/hero.md`** — the only place decorative motion and 3D are allowed |
 | Accessibility floor — 4.5:1 text, 3:1 focus ring, 44×44px targets, labelled inputs | **elite, non-negotiable** |
 | Responsive across mobile, tablet and desktop | **elite, non-negotiable** |
 | Light *and* dark mode on every surface | **elite, non-negotiable** |
@@ -289,7 +290,11 @@ Read `references/design-tokens.md`, then write:
 - `design/tokens.css` — pro-max's values in **elite's naming scheme**, light
   and dark blocks, both required
 - `design/design-system.md` — style, palette, fonts and *why*, so the next
-  session inherits the reasoning and not just the values
+  session inherits the reasoning and not just the values. If the product has
+  public surfaces, this is also where the **hero form** is recorded — the one
+  abstract shape derived from what the product does, per `references/hero.md`.
+  Unrecorded, the next session invents a different one, which is the palette
+  drift problem wearing a different hat.
 - `design/tokens.dart` — **only if there is a Flutter surface.** Generated from
   `tokens.css`, never hand-maintained beside it: two hand-kept copies drift,
   and the drift shows as an app that is subtly a different product from its own
@@ -318,6 +323,7 @@ Read `references/backend-go.md`, `references/web-surfaces.md` and
 | `references/mobile-flutter.md` | Flutter — how the app is wired: API client, auth, offline |
 | `references/patterns-mobile.md` | Flutter — how it looks: `ThemeData`, light/dark, responsive |
 | `references/motion.md` | anything animates — and *before* adding motion, since its first rule is whether to animate at all |
+| `references/hero.md` | a hero section on `platform-web` or `tenant-web` — particles, 3D, a full-screen treatment or a hero image |
 | `references/services.md` | the product took jobs, caching, chat, calls, storage or email |
 
 The two Flutter files are deliberately separate and both apply: one is
@@ -346,6 +352,8 @@ Three rules apply to every feature:
   finds out until they look.
 - **Ask whether it should animate before animating it.** A keyboard-initiated
   action seen 100+ times a day gets no animation at all — see `motion.md`.
+- **A canvas belongs in a hero on a public surface, or nowhere.** Never in
+  `webapp` or `admin-web`, and never as the LCP element — see `hero.md`.
 
 ## Phase 8 — Deploy *(Routes A and B)*
 
