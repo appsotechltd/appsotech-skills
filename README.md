@@ -113,7 +113,7 @@ doing on-demand TLS would have to own `:443`, which Traefik already does.
 
 ### `appsotech-audit`
 
-Runs the [13-Layer App Audit](appsotech-audit/app-audit.md) against a codebase.
+Runs the [13-Layer App Audit](docs/app-audit.md) against a codebase.
 101 probes across 13 layers, scored 0–4 from collected evidence, weighted to a
 single figure, with eight hard gates that cap the score at 49 when triggered.
 
@@ -127,6 +127,17 @@ Cloudflare are common examples, not the definition. Probes that cannot be
 evidenced are capped at 2 and marked UNVERIFIED rather than guessed.
 
 ## Repository layout
+
+    .claude-plugin/marketplace.json     what /plugin marketplace add reads
+    .claude/skills/ui-ux-pro-max/       vendored third-party — see its VENDORED.md
+    docs/app-audit.md                   the 13-Layer App Audit methodology
+    plugins/<theme>/                    the published plugins
+    LICENSE  README.md
+
+Everything we publish lives under `plugins/`. The two directories beside it
+are deliberately not skills: `docs/` is prose for a human to read, and
+`.claude/` configures sessions working *in this repository* rather than
+anything a user installs.
 
 The marketplace has two levels. `.claude-plugin/marketplace.json` lists
 **themed plugins** — each one a coherent area of concern (`audit`, one day

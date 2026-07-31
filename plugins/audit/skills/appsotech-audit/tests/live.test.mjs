@@ -658,7 +658,19 @@ test('the rate-limit burst stops early once its overall time budget is exceeded'
       url: slowBase,
       probeRateLimit: true,
       iOwnThis: false,
-      rateLimitBudgetMs: 400,
+      // 20 requests x 20ms = 400ms of artificial delay alone, so a 400ms
+      // budget gave this test a margin of exactly 1.0x: it truncated only
+      // because loopback overhead pushed the total a few ms over. On an idle
+      // machine that overhead approaches zero, all 20 fit inside the budget,
+      // nothing stops early, and the assertion below fails with "20/20
+      // conclusive sequential requests" — which is what it was doing, on
+      // roughly 60% of runs.
+      //
+      // 150ms needs truncation after ~7 requests and cannot be reached by the
+      // full burst under any timing. The margin is now ~2.6x rather than 1.0x,
+      // and the test asserts the behaviour it is named for instead of
+      // measuring the runner's spare capacity.
+      rateLimitBudgetMs: 150,
       timeoutMs: 1000,
     });
 
