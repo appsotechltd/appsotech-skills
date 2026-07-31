@@ -5,7 +5,7 @@
 //   gate.mjs --serve apps/webapp/dist # …and the rendered checks too
 //   gate.mjs --url http://localhost:3200
 //
-// Phase 9 used to be a nine-row table of separate commands, and a gate that
+// The gate used to be a nine-row table of separate commands, and a gate that
 // takes nine steps is a gate that gets run in part. The paths are decided by
 // the skill's own conventions, so nothing here needs to be passed by hand
 // except a running server, which cannot be guessed.
@@ -159,7 +159,7 @@ if (isMain) {
   if (existsSync(tokens)) {
     add('contrast', tokens, run('contrast.mjs', [tokens]));
   } else {
-    skip('contrast', tokens, 'no token file — Phases 5–6 have not run');
+    skip('contrast', tokens, 'no token file — selection and freeze never ran');
   }
 
   // 2. The tokens still describe what the master says they do.

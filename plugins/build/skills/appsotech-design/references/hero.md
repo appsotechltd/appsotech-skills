@@ -58,8 +58,11 @@ case is the point.
 
 ## Deriving the shape from the page
 
-The form comes from what the product *is*. Read `docs/domain.md` — the core
-entities and the one workflow that matters — and abstract from that.
+The form comes from what the product *is*. If the project keeps a domain file
+(`docs/domain.md` on the house stack), read it — the core entities and the one
+workflow that matters — and abstract from that. Without one, ask what the
+product does before picking a form; never derive it from the company name or
+the palette.
 
 | The product is about | The form that reads as it |
 |---|---|
@@ -92,9 +95,11 @@ version costs LCP, INP or battery.
   server-rendered text. Decoration sits behind, `aria-hidden`, and carries no
   message. A headline that only exists inside a canvas is invisible to search
   engines and to screen readers alike.
-- **Mount after hydration.** `next/dynamic(() => import('./Scene'), { ssr: false })`.
-  Three in the initial bundle delays interactivity on the page whose whole job
-  is a first impression.
+- **Mount after hydration.** `next/dynamic(() => import('./Scene'), { ssr: false })`
+  on Next; a plain `import()` behind `requestIdleCallback`, or your framework's
+  lazy component, elsewhere. The rule is the same everywhere: three in the
+  initial bundle delays interactivity on the page whose whole job is a first
+  impression.
 - **Pause when off-screen.** An `IntersectionObserver` stops the loop once the
   hero scrolls away. Otherwise it renders at 60fps while someone reads the
   footer.

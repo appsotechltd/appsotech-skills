@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   tokenSets, generateDart, dartName, toDartColor, toDartDouble,
-  isDarkSelector, DEFAULT_OUT,
+  isDarkSelector, OUT_SUFFIX,
 } from '../scripts/tokens-dart.mjs';
 import { collect } from '../scripts/audit-markup.mjs';
 
@@ -170,11 +170,23 @@ test('a missing input file exits 2', () => {
 
 // --- where the file goes ----------------------------------------------------
 
-test('the default output is inside the Flutter package, under a design/ dir', () => {
+test('a run without -o is refused rather than guessing a location', () => {
+  // mkdirSync is recursive, so a guessed default of apps/mobile/… would CREATE
+  // a phantom directory tree on a project with no Flutter at all — the gate's
+  // old "no Flutter surface" bug, but writing to disk instead of misreading it.
+  const { cssPath, dir } = project();
+  const res = run([cssPath]);
+  assert.equal(res.status, 2);
+  assert.match(res.stderr, /-o is required/);
+  assert.ok(!existsSync(join(dir, 'apps')), 'must not invent an apps/ tree');
+});
+
+test('the discovered suffix keeps the file inside lib/ under a design/ dir', () => {
   // Dart resolves library code relative to lib/, so a file at the repository
-  // root is not importable from apps/mobile.
-  assert.match(DEFAULT_OUT, /^apps\/mobile\/lib\//);
-  assert.match(DEFAULT_OUT, /\/design\//);
+  // root is not importable; the design/ segment keeps the markup audit off it.
+  // gate.mjs discovers exactly this suffix — the two must agree or generated
+  // files stop being found.
+  assert.equal(OUT_SUFFIX, 'lib/design/tokens.dart');
 });
 
 test('the generated Dart is exempt from the hardcoded-colour rule', () => {

@@ -227,5 +227,12 @@ pairing, the one memorable element, and the contrast results. Write the
 nothing else, and a list of hex codes with no argument behind it invites
 someone to change them.
 
-`design/overrides.md` — per-surface deviations. This is the only one of the
-three that changes during normal work.
+`design/overrides.md` — per-surface deviations. This is the only artefact
+that changes during normal work.
+
+Two more, when they apply. A Flutter surface gets its generated copy —
+`node "$TOKENSDART" design/tokens.css -o <package>/lib/design/tokens.dart` —
+and every freeze ends by recording the fingerprint,
+`node "$FREEZE" design/tokens.css design/design-system.md --record`, which is
+what lets the gate prove the tokens still match the master instead of assuming
+it.

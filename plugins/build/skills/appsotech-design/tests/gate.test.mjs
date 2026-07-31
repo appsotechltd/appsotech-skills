@@ -131,7 +131,7 @@ test('a missing design/ reports what did not run rather than passing', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bare-'));
   const res = run(dir);
   assert.match(res.stdout, /SKIP {2}contrast/);
-  assert.match(res.stdout, /Phases 5–6 have not run/);
+  assert.match(res.stdout, /selection and freeze never ran/);
   assert.match(res.stdout, /did not run/);
 });
 

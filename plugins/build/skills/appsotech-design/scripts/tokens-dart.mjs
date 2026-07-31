@@ -19,10 +19,16 @@ import { extractBlocks, parseColor } from './contrast.mjs';
 
 // The Dart file must live inside the Flutter package, because Dart resolves
 // library code relative to lib/ — `design/tokens.dart` at the repository root
-// is not importable from apps/mobile. A `design/` segment anywhere in the path
+// is not importable from the package. A `design/` segment anywhere in the path
 // also keeps audit-markup.mjs's hardcoded-colour rule off it, which is correct:
 // this file is the one place raw colour belongs on the Flutter side.
-export const DEFAULT_OUT = 'apps/mobile/lib/design/tokens.dart';
+//
+// There is deliberately no default output path. This skill is stack-agnostic
+// and mkdirSync is recursive, so a default of apps/mobile/… would silently
+// CREATE a phantom apps/mobile tree on any project where someone ran the
+// generator bare — the gate's old "no Flutter surface" bug, but writing to
+// disk instead of misreading it. The suffix below is what gate.mjs discovers.
+export const OUT_SUFFIX = 'lib/design/tokens.dart';
 
 export function isDarkSelector(selector) {
   return /(^|[\s,.[])dark\b|prefers-color-scheme:\s*dark|data-theme\s*=\s*["']?dark/i
@@ -125,11 +131,19 @@ if (isMain) {
   const args = process.argv.slice(2);
   const check = args.includes('--check');
   const oIdx = args.findIndex((a) => a === '-o' || a === '--out');
-  const out = oIdx !== -1 ? args[oIdx + 1] : DEFAULT_OUT;
-  const file = args.find((a, i) => !a.startsWith('-') && i !== oIdx + 1);
+  const out = oIdx !== -1 ? args[oIdx + 1] : null;
+  // The oIdx guard applies only when -o was actually given — otherwise
+  // oIdx + 1 is 0 and would wrongly exclude the first positional argument.
+  const file = args.find((a, i) => !a.startsWith('-') && (oIdx === -1 || i !== oIdx + 1));
 
-  if (!file) {
-    console.error('usage: tokens-dart.mjs <tokens.css> [-o <tokens.dart>] [--check]');
+  if (!file || !out) {
+    console.error('usage: tokens-dart.mjs <tokens.css> -o <package>/lib/design/tokens.dart [--check]');
+    if (file && !out) {
+      console.error(
+        '-o is required: only you know where the Flutter package lives, and a ' +
+        'guessed default would create a phantom directory tree on a project ' +
+        'that has no Flutter at all.');
+    }
     process.exit(2);
   }
   if (!existsSync(file)) {
