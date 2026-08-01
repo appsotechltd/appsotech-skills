@@ -18,7 +18,7 @@ description: >
 Style, tokens, patterns and the gate. This skill decides **how a thing looks**
 and proves it meets the floor. It does not care what the thing is built with.
 
-`appsotech-stack` handles wiring — surfaces, ports, API, deploy — and delegates
+`appsotech-dev` handles wiring — surfaces, ports, API, deploy — and delegates
 every decision below to this file. Loading either one is enough; loading the
 stack pulls this in by path.
 

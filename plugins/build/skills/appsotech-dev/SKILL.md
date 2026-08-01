@@ -1,5 +1,5 @@
 ---
-name: appsotech-stack
+name: appsotech-dev
 description: >
   Build applications on the Appsotech house stack — Go API (fasthttp, pgx/v5),
   Next.js public surfaces, React + Vite surfaces behind auth, Flutter mobile,
@@ -63,9 +63,9 @@ The working directory during a run is the target project, so a bare
 
 ```bash
 for base in \
-  "$CLAUDE_PLUGIN_ROOT/skills/appsotech-stack/scripts" \
-  "$HOME/.claude/skills/appsotech-stack/scripts" \
-  ".claude/skills/appsotech-stack/scripts"; do
+  "$CLAUDE_PLUGIN_ROOT/skills/appsotech-dev/scripts" \
+  "$HOME/.claude/skills/appsotech-dev/scripts" \
+  ".claude/skills/appsotech-dev/scripts"; do
   [ -f "$base/scaffold.mjs" ] && SCRIPTS="$base" && break
 done
 SCAFFOLD="$SCRIPTS/scaffold.mjs"

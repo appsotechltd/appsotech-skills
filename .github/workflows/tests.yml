@@ -67,8 +67,8 @@ jobs:
       - name: appsotech-audit
         run: node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs
 
-      - name: appsotech-stack
-        run: node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
+      - name: appsotech-dev
+        run: node --test plugins/build/skills/appsotech-dev/tests/*.test.mjs
 
       - name: appsotech-design
         run: node --test plugins/build/skills/appsotech-design/tests/*.test.mjs
@@ -93,7 +93,7 @@ jobs:
           for i in 1 2 3 4 5; do
             echo "::group::run $i"
             node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs || exit 1
-            node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs || exit 1
+            node --test plugins/build/skills/appsotech-dev/tests/*.test.mjs || exit 1
             node --test plugins/build/skills/appsotech-design/tests/*.test.mjs || exit 1
             echo "::endgroup::"
           done

@@ -11,22 +11,22 @@ Skills for Claude Code, published by Appsotech Limited.
 ## Install by copying
 
     cp -r plugins/audit/skills/appsotech-audit ~/.claude/skills/
-    cp -r plugins/build/skills/appsotech-stack ~/.claude/skills/
+    cp -r plugins/build/skills/appsotech-dev ~/.claude/skills/
     cp -r plugins/build/skills/appsotech-design ~/.claude/skills/
 
-`appsotech-stack` reads `appsotech-design` at its design phases, so copy both
+`appsotech-dev` reads `appsotech-design` at its design phases, so copy both
 if you want a whole project covered. `appsotech-design` on its own is a
 complete skill and needs nothing else.
 
 On Windows (PowerShell):
 
     Copy-Item -Recurse plugins\audit\skills\appsotech-audit $HOME\.claude\skills\
-    Copy-Item -Recurse plugins\build\skills\appsotech-stack $HOME\.claude\skills\
+    Copy-Item -Recurse plugins\build\skills\appsotech-dev $HOME\.claude\skills\
     Copy-Item -Recurse plugins\build\skills\appsotech-design $HOME\.claude\skills\
 
 ## Skills
 
-### `appsotech-stack`
+### `appsotech-dev`
 
 **How a project is wired** — surfaces, ports, database, API, deploy. Load it at
 the start of a project and it covers the scaffold and, by reading
@@ -89,7 +89,7 @@ of that should have to load a Go and Coolify manual to get at a palette. It is
 stack-agnostic — React, Next.js, Vue, Svelte, Flutter, plain HTML or a single
 file — so it also works on projects that are not on the house stack at all.
 
-The two are split so that nothing is duplicated: `appsotech-stack` resolves the
+The two are split so that nothing is duplicated: `appsotech-dev` resolves the
 design skill by path and reads it, rather than carrying its own copy of the
 precedence table. Two copies of a rule is how the two copies come to disagree.
 
@@ -251,7 +251,7 @@ folders under its own `skills/`:
     plugins/<theme>/skills/<skill-name>/SKILL.md
 
 There are two themes today: `plugins/audit/` holds `appsotech-audit`, and
-`plugins/build/` holds `appsotech-stack`. A second skill in either theme sits
+`plugins/build/` holds `appsotech-dev`. A second skill in either theme sits
 alongside the first as `plugins/<theme>/skills/<new-skill>/`, sharing that
 plugin's version.
 
@@ -269,7 +269,7 @@ Issues and pull requests welcome. Skills live under `plugins/<plugin>/skills/`.
 Run tests with:
 
     node --test plugins/audit/skills/appsotech-audit/tests/*.test.mjs
-    node --test plugins/build/skills/appsotech-stack/tests/*.test.mjs
+    node --test plugins/build/skills/appsotech-dev/tests/*.test.mjs
 
 Requires **Node 22 or later** — the code uses `import.meta.dirname` and the
 tests rely on `node --test`'s glob-argument support, neither of which exist
