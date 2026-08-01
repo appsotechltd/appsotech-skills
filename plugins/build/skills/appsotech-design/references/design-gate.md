@@ -19,6 +19,7 @@ rendered target needs naming. Underneath it runs:
 node "$CONTRAST" design/tokens.css                  # tokens still compliant
 node "$FREEZE" design/tokens.css design/design-system.md  # …and still the frozen ones
 node "$TOKENSDART" design/tokens.css -o <dart> --check    # Flutter copy has not drifted
+node "$CONSISTENCY" .                               # the accent still identifies the product
 node "$AUDIT" <src-dir>                             # the code actually uses them
 node "$RESPONSIVE" --serve <build-dir>              # it holds up in a real browser
 ```
@@ -114,7 +115,7 @@ which is a decision someone can review — deleting a rule is not.
 
 ### Responsive
 
-- [ ] **[auto]** Loads at 320px, 768px (**tablet**) and 1280px with no page overflow
+- [ ] **[auto]** Loads at 320px, 768px (**tablet**) and 1440px with no page overflow
 - [ ] Tablet is a designed layout, not a stretched phone
 - [ ] **[auto]** No horizontal page scroll — wide content scrolls in its own container
 - [ ] Images `max-w-full`; no fixed width exceeding a phone
@@ -132,6 +133,17 @@ which is a decision someone can review — deleting a rule is not.
 - [ ] Follows the system preference, and an explicit toggle overrides and
       persists
 - [ ] Dark is a designed palette, not the light one inverted
+
+### Composition
+
+- [ ] **[auto]** No page whose content occupies <40% of a 1440×900 viewport —
+      the floating-card failure, caught as `sparse-page`
+- [ ] The layout uses a stated grid; you can name the column count
+- [ ] Deliberate density — a data table declares comfortable or compact
+- [ ] Every empty state is designed; no blank tables, no bare spinners
+- [ ] The page has one focal point and you can point at it
+- [ ] The archetype in `archetypes.md` was followed, or the deviation is
+      recorded in `design/overrides.md`
 
 ### Visual design
 

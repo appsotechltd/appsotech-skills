@@ -6,6 +6,10 @@ file owns which treatment a page gets, what it may cost, and how it degrades.
 It is not a licence for 3D elsewhere. A canvas anywhere but a hero needs a
 reason that is not "it looks good" — see `motion.md`'s frequency gate.
 
+This file owns **treatment, engine and budget**. The hero's *composition* — the
+dark token scope default, the rhythm rule that the next section must be light,
+and the fold requirement — lives in `archetypes.md` §2. The two do not overlap.
+
 ## The four treatments
 
 | Treatment | What it is | Reach for it when |

@@ -93,6 +93,7 @@ AUDIT="$SCRIPTS/audit-markup.mjs"
 RESPONSIVE="$SCRIPTS/responsive-check.mjs"
 TOKENSDART="$SCRIPTS/tokens-dart.mjs"
 FREEZE="$SCRIPTS/freeze-check.mjs"
+CONSISTENCY="$SCRIPTS/consistency.mjs"
 echo "${SCRIPTS:-NOT FOUND}"
 ```
 
@@ -107,7 +108,7 @@ checks silently.
 | The request | Route |
 |---|---|
 | A product with no design system yet | **Every phase, 1 → 4** |
-| A screen or component in a product that has one | **Skip 1–2.** Read `design/design-system.md`, build, gate. |
+| A screen or component in a product that has one | **Skip 1–2.** Read `design/design-system.md` **and** `references/archetypes.md`, build, gate. |
 | A standalone mockup or single-file prototype | **Skip 1–2 if a system exists**, otherwise select quickly and put the tokens in the file itself |
 | "Restyle it", "pick a new palette" | **Phase 1**, and only when asked in those words |
 
@@ -210,10 +211,15 @@ turn a red gate green.
 
 | Reference | When |
 |---|---|
+| `references/archetypes.md` | the surface is one of the eight recurring page types — auth, hero, dashboard, list, detail, form, settings, states — read **before** laying anything out |
 | `references/patterns-web.md` | a dashboard, landing page or Tailwind/React component |
 | `references/patterns-mobile.md` | Flutter — `ThemeData`, light/dark, responsive |
 | `references/motion.md` | anything animates — and *before* adding motion, since its first rule is whether to animate at all |
 | `references/hero.md` | a hero section — particles, 3D, a full-screen treatment or a hero image |
+
+The archetypes are why a sign-in page comes out as a 50/50 split and a hero
+comes out on the dark token scope **without being asked** — those are the
+defaults, and departing from one is recorded in `design/overrides.md`.
 
 Three rules apply to everything built here:
 
@@ -237,14 +243,26 @@ It discovers `design/` and every `apps/*/src` by convention; pass `--src`,
 differently. Only a rendered target needs naming — `--serve` for a static
 build, `--url` for a server that is already running.
 
-**A step it could not run reports `SKIP` and is never counted as a pass**, said
-again at the end. A partial run reported as a clean one is worse than no gate,
-because it gets believed.
+**A step it could not run reports `SKIP`, and a gap fails the gate** — pass
+`--allow-skip` only to acknowledge a gap you have checked by hand. A true
+absence (no Flutter package at all) reports `N/A` and never fails; the two are
+kept apart because seven Flutter apps once drifted for months behind a skip
+that read like an absence. A partial run reported as a clean one is worse than
+no gate, because it gets believed.
 
 Then walk `references/design-gate.md` end to end. The scripts cover the items
 marked `[auto]`; the rest are judgement calls — whether the tablet layout is
 designed or merely fits, whether dark mode was designed or inverted, whether
 the memorable element survived into the code.
+
+**Then look at it.** Screenshot every surface at 1440×900 in **both themes**
+— `responsive-check` writes these already unless `--no-shots` — and read the
+images back before reporting. The scripts prove the floor; only looking proves
+the design. In the audit behind this rule, a four-way accent divergence, a
+70%-empty sign-in page and a forked product still shipping its parent's
+marketing copy were all invisible to the scripts and obvious in the
+screenshots. If a screenshot cannot be produced, say so — never report a
+surface as designed on the strength of a green gate.
 
 Report what passed, what failed with its output, and what did not run.
 

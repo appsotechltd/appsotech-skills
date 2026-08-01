@@ -141,6 +141,40 @@ function hardcodedColour(file, content, lines, ext) {
   return out;
 }
 
+// 1b. A Tailwind palette class is a hardcoded colour wearing a class name.
+//
+// bg-gray-900 is as frozen as #111827 and breaks dark mode identically —
+// `bg-white text-gray-900` stays white in dark mode, silently. Measured across
+// seven behind-auth apps: the hex/rgb/hsl rule flagged ~3,000 findings while
+// ~18,300 palette classes went unflagged, so the gate was blind to 86% of the
+// colour problem, and the unflagged form is the exact mechanism by which dark
+// mode dies.
+//
+// A distinct rule id, not hardcoded-colour, so existing suppressions and
+// counts stay meaningful. Ships at `warn` for one release before promotion to
+// error: ~18,000 day-one errors across a live suite is a rule people disable.
+const TW_PALETTE = /\b(bg|text|border|divide|ring|from|via|to|placeholder|decoration)-(gray|slate|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(50|[1-9]00|950)\b/g;
+const TW_ABSOLUTE = /\b(bg|text|border)-(white|black)\b/g;
+
+function tailwindPaletteClass(file, content, lines) {
+  // tailwind.config.* is where the palette-to-token mapping legitimately
+  // lives — flagging it would flag the prescribed answer.
+  if (/(^|[\\/])tailwind\.config\.[cm]?[jt]s$/.test(file)) return [];
+  const out = [];
+  for (const re of [TW_PALETTE, TW_ABSOLUTE]) {
+    for (const m of content.matchAll(re)) {
+      const line = lineOf(content, m.index);
+      if (suppressed(lines, line)) continue;
+      out.push({
+        rule: 'tailwind-palette-class', severity: 'warn', file, line,
+        text: m[0],
+        why: 'a Tailwind palette class is a hardcoded colour — it ignores the tokens and does not change in dark mode; use bg-background, text-foreground, etc.',
+      });
+    }
+  }
+  return out.sort((a, b) => a.line - b.line);
+}
+
 // 2. Tailwind purges class names it cannot see as literals.
 function dynamicTailwind(file, content, lines) {
   const out = [];
@@ -475,7 +509,7 @@ const DART_RULES = [
 ];
 
 const WEB_RULES = [
-  hardcodedColour, dynamicTailwind, nonSemanticClick, imgMissingAlt,
+  hardcodedColour, tailwindPaletteClass, dynamicTailwind, nonSemanticClick, imgMissingAlt,
   inputMissingLabel, bannedDisplayFont, outlineNoneNoFocus, layoutAnimation,
   viewportHeightUnit, static3dImport, ambientMotionNoReducedMotion,
 ];

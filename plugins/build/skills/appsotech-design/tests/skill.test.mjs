@@ -129,6 +129,7 @@ test('the phase headers in the references match the numbers SKILL.md assigns', (
   // phase. If the two disagree, the reader lands in the wrong place while both
   // files look internally consistent.
   const expected = {
+    'archetypes.md': 3,
     'design-phase.md': 1,
     'design-tokens.md': 2,
     'patterns-web.md': 3,

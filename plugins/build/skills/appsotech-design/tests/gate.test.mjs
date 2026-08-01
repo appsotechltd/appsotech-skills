@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  classify, surfaceDirs, flutterTokenFiles, hasFlutterPackage, PASS, FAIL, SKIP,
+  classify, surfaceDirs, flutterTokenFiles, hasFlutterPackage, PASS, FAIL, SKIP, NA,
 } from '../scripts/gate.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'scripts', 'gate.mjs');
@@ -75,17 +75,30 @@ test('a project with no apps/ yields no surfaces rather than throwing', () => {
 
 // --- the run ----------------------------------------------------------------
 
-test('a clean project passes, with the un-runnable steps marked SKIP', () => {
+test('a clean project passes under --allow-skip, gaps and absences labelled apart', () => {
   const dir = project();
   record(dir);
-  const res = run(dir, ['--domain', join('docs', 'domain.md')]);
+  const res = run(dir, ['--domain', join('docs', 'domain.md'), '--allow-skip']);
   assert.equal(res.status, 0, res.stdout);
   assert.match(res.stdout, /PASS {2}domain/);
   assert.match(res.stdout, /PASS {2}contrast/);
   assert.match(res.stdout, /PASS {2}freeze/);
   assert.match(res.stdout, /PASS {2}markup/);
+  // responsive could not run — a gap, acknowledged by the flag.
   assert.match(res.stdout, /SKIP {2}responsive/);
-  assert.match(res.stdout, /SKIP {2}tokens\.dart/);
+  // no Flutter package exists — nothing to check, not a gap.
+  assert.match(res.stdout, /N\/A\s+tokens\.dart/);
+});
+
+test('without --allow-skip, a gap fails the gate', () => {
+  // SKILL.md said twice that a skipped step is never a pass; the exit code
+  // used to disagree, and seven Flutter apps drifted behind a silent skip.
+  const dir = project();
+  record(dir);
+  const res = run(dir);   // no rendered target -> responsive is a gap
+  assert.equal(res.status, 1, res.stdout);
+  assert.match(res.stdout, /could not run, and a gap is not a pass/);
+  assert.match(res.stdout, /--allow-skip/);
 });
 
 test('skips are never counted as passes, and are called out every run', () => {
@@ -93,9 +106,9 @@ test('skips are never counted as passes, and are called out every run', () => {
   // is worse than no gate, because it is believed.
   const dir = project();
   record(dir);
-  const out = run(dir, ['--domain', join('docs', 'domain.md')]).stdout;
-  assert.match(out, /4 passed, 0 failed, 2 skipped/);
-  assert.match(out, /did not run\. They are not passes/);
+  const out = run(dir, ['--domain', join('docs', 'domain.md'), '--allow-skip']).stdout;
+  assert.match(out, /4 passed, 0 failed, 1 skipped, 2 not applicable/);
+  assert.match(out, /a gap is not a pass/);
 });
 
 test('an unrecorded palette fails the gate', () => {
@@ -127,28 +140,28 @@ test('a hardcoded colour in a component fails the gate', () => {
   assert.match(res.stdout, /hardcoded-colour/);
 });
 
-test('a missing design/ reports what did not run rather than passing', () => {
+test('a missing design/ is a failing run, not a quiet one', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bare-'));
   const res = run(dir);
+  assert.equal(res.status, 1);
   assert.match(res.stdout, /SKIP {2}contrast/);
   assert.match(res.stdout, /selection and freeze never ran/);
-  assert.match(res.stdout, /did not run/);
 });
 
 test('--src overrides discovery for a single surface', () => {
   const dir = project();
   record(dir);
-  const res = run(dir, ['--src', join('apps', 'webapp', 'src')]);
+  const res = run(dir, ['--src', join('apps', 'webapp', 'src'), '--allow-skip']);
   assert.equal(res.status, 0, res.stdout);
   assert.match(res.stdout, /markup\s+apps/);
 });
 
-test('every step is one of exactly three states', () => {
+test('every step is one of exactly four states', () => {
   const dir = project();
   record(dir);
   for (const line of run(dir).stdout.split('\n')) {
-    const m = line.match(/^ {2}(\w+) {2}\w/);
-    if (m) assert.ok([PASS, FAIL, SKIP].includes(m[1]), line);
+    const m = line.match(/^ {2}(PASS|FAIL|SKIP|N\/A)/);
+    if (m) assert.ok([PASS, FAIL, SKIP, NA.trim()].includes(m[1]), line);
   }
 });
 
@@ -162,9 +175,10 @@ test('a domain that was never written down is surfaced, not passed over', () => 
   const res = run(dir, ['--domain', join('docs', 'domain.md')]);
   assert.match(res.stdout, /SKIP {2}domain/);
   assert.match(res.stdout, /never written down/);
-  // A missing domain is a gap in the record, not a broken build. It reports
-  // and does not fail, the same way an absent Flutter surface does.
-  assert.equal(res.status, 0, res.stdout);
+  // Asking for --domain and not having the file is a gap, and gaps now fail;
+  // --allow-skip is the explicit acknowledgment.
+  assert.equal(res.status, 1, res.stdout);
+  assert.equal(run(dir, ['--domain', join('docs', 'domain.md'), '--allow-skip']).status, 0);
 });
 
 test('the domain step asserts existence only, never contents', () => {
@@ -183,9 +197,9 @@ test('without --domain there is no domain step at all', () => {
   // which is how a real warning gets trained into background noise.
   const dir = project({ domain: false });
   record(dir);
-  const out = run(dir).stdout;
+  const out = run(dir, ['--allow-skip']).stdout;
   assert.doesNotMatch(out, /domain/);
-  assert.match(out, /3 passed, 0 failed, 2 skipped/);
+  assert.match(out, /3 passed, 0 failed, 1 skipped, 2 not applicable/);
 });
 
 // --- finding the Flutter package ---------------------------------------------
@@ -243,9 +257,12 @@ test('a Flutter package with no generated tokens is a finding, not an absence', 
   const dir = flutterProject({ at: 'mobile', tokens: false });
   record(dir);
   assert.equal(hasFlutterPackage(dir), true);
-  const out = run(dir, ['--src', join('mobile', 'lib')]).stdout;
-  assert.match(out, /SKIP {2}tokens\.dart/);
-  assert.match(out, /never generated/);
+  const res = run(dir, ['--src', join('mobile', 'lib')]);
+  assert.match(res.stdout, /SKIP {2}tokens\.dart/);
+  assert.match(res.stdout, /never generated/);
+  // The acceptance case: a project with a Flutter package but no tokens.dart
+  // FAILS. This is the exact configuration that drifted silently in the field.
+  assert.equal(res.status, 1, res.stdout);
 });
 
 test('no Flutter anywhere says exactly that', () => {
@@ -253,7 +270,9 @@ test('no Flutter anywhere says exactly that', () => {
   record(dir);
   assert.equal(hasFlutterPackage(dir), false);
   assert.deepEqual(flutterTokenFiles(dir), []);
-  assert.match(run(dir).stdout, /no Flutter package found/);
+  const out = run(dir).stdout;
+  assert.match(out, /N\/A\s+tokens\.dart/);
+  assert.match(out, /no Flutter package found/);
 });
 
 test('--dart still overrides discovery', () => {

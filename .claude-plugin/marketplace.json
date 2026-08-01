@@ -22,7 +22,7 @@
       "name": "build",
       "source": "./plugins/build",
       "description": "Two skills for the Appsotech house stack. appsotech-dev scaffolds Go APIs, Next.js and React/Vite surfaces, Flutter mobile, PostgreSQL with RLS, Redis, R2 and Coolify deployment to a fixed layout with allocated ports and databases; appsotech-design owns style, design tokens, light and dark mode, responsive layout, motion, heroes and a mechanical accessibility gate, and works standalone on any stack",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "Appsotech Limited",
         "email": "appsotechltd@gmail.com"

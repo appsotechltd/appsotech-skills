@@ -8,7 +8,7 @@ import {
   VIEWPORTS, TAP_MIN, IOS_ZOOM_FLOOR,
   resolvePlaywright, playwrightCandidates, targetUrl,
   summarise, darkModeFinding, safeJoin, serveDir, MIME,
-  SHORT_VIEWPORT, PROBES, SHORT_MAX,
+  SHORT_VIEWPORT, PROBES, SHORT_MAX, CONTENT_MIN,
 } from '../scripts/responsive-check.mjs';
 
 const CLI = join(import.meta.dirname, '..', 'scripts', 'responsive-check.mjs');
@@ -37,7 +37,7 @@ function fixture(html) {
 test('the three default widths include tablet', () => {
   // 768 is the width the gate calls out as most often skipped, so its presence
   // in the default set is load-bearing rather than incidental.
-  assert.deepEqual(VIEWPORTS.map((v) => v.width), [320, 768, 1280]);
+  assert.deepEqual(VIEWPORTS.map((v) => v.width), [320, 768, 1440]);
   assert.equal(VIEWPORTS.find((v) => v.width === 768).name, 'tablet');
   assert.equal(TAP_MIN, 44);
   assert.equal(IOS_ZOOM_FLOOR, 16);
@@ -265,7 +265,7 @@ const GOOD = `<style>
   :root { --bg:#fff; --fg:#10202B; --link:#0B4F8A; }
   @media (prefers-color-scheme: dark) { :root { --bg:#08141B; --fg:#EAF2F6; --link:#7CC4FF; } }
   body { margin:0; background:var(--bg); color:var(--fg); font-size:16px; }
-  .wrap { max-width:100%; padding:16px; }
+  .wrap { max-width:100%; padding:16px; min-height:100svh; }
   .scroller { overflow-x:auto; }
   .scroller table { width:900px; }
   button { min-width:44px; min-height:44px; font-size:16px; }
@@ -343,7 +343,7 @@ test('the landscape probe is separate from the width probes', () => {
   // VIEWPORTS answers "does this overflow sideways"; the landscape entry
   // answers a different question, so appending it to that list would confuse
   // what each probe is for.
-  assert.deepEqual(VIEWPORTS.map((v) => v.width), [320, 768, 1280]);
+  assert.deepEqual(VIEWPORTS.map((v) => v.width), [320, 768, 1440]);
   assert.equal(SHORT_VIEWPORT.height, 360);
   assert.ok(SHORT_VIEWPORT.height <= SHORT_MAX);
   assert.deepEqual(PROBES.map((v) => v.name),
@@ -491,4 +491,61 @@ test('--serve works end to end from a relative path', { skip: !HAS_PW && 'playwr
   // string "forbidden", which overflows nothing and has no tap targets.
   assert.match(r, /Nothing to fix/);
   assert.doesNotMatch(r, /forbidden/);
+});
+
+// --- content coverage --------------------------------------------------------
+
+test('the coverage threshold is exported and composition-grade, not correctness', () => {
+  assert.equal(CONTENT_MIN, 0.4);
+});
+
+test('a small card floating in an empty desktop viewport is sparse', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // The failure that motivated the check: an admin sign-in as a 400px card in
+  // an otherwise empty 1440x900 viewport passes every element check.
+  const { path } = fixture(`<!doctype html><meta name=viewport content="width=device-width">
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui;display:grid;place-items:center;height:100vh}
+@media (prefers-color-scheme: dark){body{background:#0b0b0b;color:#f4f4f4}}
+.card{width:400px;padding:24px;border:1px solid #ddd}</style>
+<form class=card><label for=e>Email</label><input id=e style="font-size:16px;min-height:44px;width:100%">
+<button style="min-width:44px;min-height:44px;width:100%">Sign in</button></form>`);
+  const res = run([path, '--no-shots', '--widths', '1440']);
+  assert.match(res.stdout, /sparse-page/);
+  assert.match(res.stdout, /archetypes\.md/);
+  // Composition ships as warn — a live suite must not go red on day one.
+  assert.equal(res.status, 0, res.stdout);
+});
+
+test('a split layout that uses the viewport is not sparse', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // The archetype's answer: a 50/50 split where the brand half paints a
+  // background. Coverage comes from composition, not from padding tricks.
+  const { path } = fixture(`<!doctype html><meta name=viewport content="width=device-width">
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui}
+.split{display:grid;grid-template-columns:1fr 1fr;min-height:100svh}
+.brand{background:#0b1220;color:#f4f6fb;padding:48px}
+.form{display:grid;place-items:center}.col{width:400px}</style>
+<div class=split><section class=brand><h1>Product</h1><p>One line of positioning.</p></section>
+<section class=form><form class=col><label for=e>Email</label>
+<input id=e style="font-size:16px;min-height:44px;width:100%">
+<button style="min-height:44px;width:100%">Sign in</button></form></section></div>`);
+  const res = run([path, '--no-shots', '--widths', '1440']);
+  assert.doesNotMatch(res.stdout, /sparse-page/);
+});
+
+test('a type-alone hero is restraint, not sparseness', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  // A full-height section with only a headline and CTA is a legitimate
+  // archetype; the deliberate full-height element is what marks it as
+  // composed rather than unfinished.
+  const { path } = fixture(`<!doctype html><meta name=viewport content="width=device-width">
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui}
+.hero{min-height:100svh;display:grid;place-content:center;text-align:center}</style>
+<section class=hero><h1>Ship faster</h1><p>One line under it.</p>
+<a href="#x" style="min-width:44px;min-height:44px;display:inline-block">Start</a></section>`);
+  assert.doesNotMatch(run([path, '--no-shots', '--widths', '1440']).stdout, /sparse-page/);
+});
+
+test('coverage is a desktop question — narrow viewports are exempt', { skip: !HAS_PW && 'playwright not installed' }, () => {
+  const { path } = fixture(`<!doctype html><meta name=viewport content="width=device-width">
+<style>body{margin:0;background:#fff;color:#111;font:16px/1.5 system-ui}</style>
+<p>A short page.</p>`);
+  assert.doesNotMatch(run([path, '--no-shots', '--widths', '320,768']).stdout, /sparse-page/);
 });

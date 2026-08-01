@@ -27,7 +27,10 @@ export const VIEWPORTS = [
   // The width most often skipped — a layout that jumps straight from stacked
   // to desktop grid looks like a stretched phone right here.
   { name: 'tablet', width: 768, height: 1024 },
-  { name: 'desktop', width: 1280, height: 900 },
+  // 1440×900 rather than 1280: it is the commonest desktop viewport in the
+  // suite's analytics, and the composition brief's measurements were taken at
+  // it. The content-coverage check below depends on a realistic desktop area.
+  { name: 'desktop', width: 1440, height: 900 },
 ];
 
 // A width probe answers "does this overflow sideways". This one answers a
@@ -45,6 +48,9 @@ export const PROBES = [...VIEWPORTS, SHORT_VIEWPORT];
 export const SHORT_MAX = 480;
 
 export const TAP_MIN = 44;
+// Below this share of the desktop viewport, a page is not using its canvas —
+// the floating-login-card failure. Composition, not correctness, so it warns.
+export const CONTENT_MIN = 0.4;
 export const MOBILE_MAX = 640;
 // Below 16px, iOS zooms the viewport when a form control takes focus. This is
 // a hard, mechanical consequence, not a readability preference.
@@ -429,6 +435,59 @@ export function analysePage() {
       text: `${describe(el)} ${ratio}:1 (needs ${min})`,
       why: `text as painted is below the floor${fgRaw.a < 1 ? ' — the foreground is translucent, which the token file cannot show' : ''}`,
     });
+  }
+
+  // 7. Content coverage — is the page using its viewport?
+  //
+  // Every other probe judges an element; this one judges the page. A 400px
+  // card floating in an empty 1440×900 viewport passes every element check
+  // and is still an unfinished page. "Content" is anything that paints:
+  // text, replaced elements and controls, a non-transparent background, or a
+  // deliberate full-height section (which is how a type-alone hero — a
+  // legitimate archetype — is not penalised for its restraint).
+  if (vw >= 1024) {
+    const rects = [];
+    const bodyBg = getComputedStyle(document.body).backgroundColor;
+    const PAINTED = new Set(['IMG', 'SVG', 'CANVAS', 'VIDEO', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA', 'TABLE']);
+    for (const el of document.querySelectorAll('body *')) {
+      if (!visible(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > vh) continue;
+      const s = getComputedStyle(el);
+      const ownText = Array.from(el.childNodes)
+        .some((n) => n.nodeType === 3 && n.textContent.trim().length >= 2);
+      const bg = s.backgroundColor;
+      const paintedBg = bg && !/^rgba\(0, 0, 0, 0\)$|^transparent$/.test(bg) && bg !== bodyBg;
+      const tall = r.height >= vh * 0.5;
+      if (!ownText && !PAINTED.has(el.tagName) && !paintedBg && !tall) continue;
+      rects.push({
+        left: Math.max(0, r.left), top: Math.max(0, r.top),
+        right: Math.min(vw, r.right), bottom: Math.min(vh, r.bottom),
+      });
+    }
+    // Union area on a coarse grid — exact rectangle union is overkill for a
+    // 40% threshold, and 20px cells keep it a few thousand checks.
+    const CELL = 20;
+    const cols = Math.ceil(vw / CELL);
+    const rows = Math.ceil(vh / CELL);
+    const grid = new Uint8Array(cols * rows);
+    for (const r of rects) {
+      const c0 = Math.floor(r.left / CELL); const c1 = Math.ceil(r.right / CELL);
+      const r0 = Math.floor(r.top / CELL); const r1 = Math.ceil(r.bottom / CELL);
+      for (let y = r0; y < r1 && y < rows; y++) {
+        for (let x = c0; x < c1 && x < cols; x++) grid[y * cols + x] = 1;
+      }
+    }
+    let covered = 0;
+    for (let i = 0; i < grid.length; i++) covered += grid[i];
+    const coverage = covered / (cols * rows);
+    if (coverage < 0.4) {
+      findings.push({
+        rule: 'sparse-page', severity: 'warn',
+        text: `content covers ${Math.round(coverage * 100)}% of ${vw}×${vh}`,
+        why: 'most of the viewport is empty — an archetype in archetypes.md almost certainly composes this page better than a floating card does',
+      });
+    }
   }
 
   return {

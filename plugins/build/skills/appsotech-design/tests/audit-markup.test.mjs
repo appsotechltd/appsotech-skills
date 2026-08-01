@@ -533,3 +533,67 @@ test('design-ok suppresses the Dart rules too', () => {
     rules('lib/card.dart', 'color: Colors.blue, // design-ok')
       .filter((r) => r === 'bare-material-colour'), []);
 });
+
+// --- Tailwind palette classes -----------------------------------------------
+
+test('a Tailwind palette class is a hardcoded colour wearing a class name', () => {
+  const found = audit('src/Card.tsx',
+    '<div className="bg-white text-gray-900 border-slate-200 p-4" />');
+  const tw = found.filter((f) => f.rule === 'tailwind-palette-class');
+  assert.equal(tw.length, 3, JSON.stringify(found));
+  // Distinct id, so existing hardcoded-colour suppressions and counts stay
+  // meaningful; warn for one release so a live suite is not red on day one.
+  for (const f of tw) assert.equal(f.severity, 'warn');
+  assert.deepEqual(found.filter((f) => f.rule === 'hardcoded-colour'), []);
+});
+
+test('the dark: variant is the same hardcoded colour and is caught', () => {
+  // bg-white dark:bg-gray-900 is dark mode maintained by hand, per component —
+  // the exact drift the tokens exist to prevent.
+  const found = audit('src/Card.tsx', '<div className="bg-white dark:bg-gray-900" />');
+  assert.equal(found.filter((f) => f.rule === 'tailwind-palette-class').length, 2);
+});
+
+test('token-backed utilities are the correct answer and are never flagged', () => {
+  for (const src of [
+    '<div className="bg-background text-foreground border-border" />',
+    '<div className="bg-primary text-primary-foreground ring-ring" />',
+    '<div className="bg-muted/50 text-muted-foreground" />',
+  ]) {
+    assert.deepEqual(
+      rules('src/C.tsx', src).filter((r) => r === 'tailwind-palette-class'), [], src);
+  }
+});
+
+test('non-colour utilities that mention a scale number are not colours', () => {
+  for (const src of [
+    '<div className="p-4 gap-2 w-96 max-w-400 grid-cols-12" />',
+    '<div className="text-sm font-bold rounded-lg shadow-md" />',
+  ]) {
+    assert.deepEqual(
+      rules('src/C.tsx', src).filter((r) => r === 'tailwind-palette-class'), [], src);
+  }
+});
+
+test('tailwind.config is where the mapping lives and is exempt', () => {
+  const src = 'export default { theme: { colors: { gray: colors.gray } } }; // bg-gray-900 text-white';
+  for (const path of ['tailwind.config.js', 'apps/webapp/tailwind.config.ts', 'tailwind.config.mjs']) {
+    assert.deepEqual(
+      rules(path, src).filter((r) => r === 'tailwind-palette-class'), [], path);
+  }
+});
+
+test('design-ok suppresses a palette class like every other rule', () => {
+  assert.deepEqual(
+    rules('src/C.tsx', '<div className="bg-black" /> {/* design-ok */}')
+      .filter((r) => r === 'tailwind-palette-class'), []);
+});
+
+test('an app maintaining dark mode by hand reports debt proportionally', () => {
+  // The acceptance case from the brief: bg-white dark:bg-gray-900 throughout.
+  const page = Array.from({ length: 5 }, (_, i) =>
+    `<section className="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">${i}</section>`
+  ).join('\n');
+  const tw = audit('src/Page.tsx', page).filter((f) => f.rule === 'tailwind-palette-class');
+  assert.equal(tw.length, 20, 'four palette classes per section, five sections');
+});

@@ -130,15 +130,28 @@ filesystem still produces a compliant, tokenised interface.
 
 ### The gate
 
-Six scripts make it mechanical rather than aspirational; **26 checklist items
+Seven scripts make it mechanical rather than aspirational; **27 checklist items
 are marked `[auto]`**, and the rest stay human because they are judgement
-calls, not leftovers.
+calls, not leftovers. The newest layer is **composition**: eight page
+archetypes in `references/archetypes.md` — auth as a 50/50 split rather than a
+floating card, heroes on the dark token scope by default — and a `sparse-page`
+check that measures whether a page actually uses its viewport, because a 400px
+card in an empty 1440×900 viewport passes every element check and is still an
+unfinished page.
 
 `scripts/gate.mjs` is the one command that runs the rest. It discovers `design/`
 and every `apps/*/src` from the conventions, so only a rendered target has to be
-named. A step it could not run prints `SKIP` and is never folded into the pass
-count — a partial run reported as a clean one is worse than no gate, because it
-is believed.
+named. A step it could not run prints `SKIP`, **and a gap now fails the gate**
+unless `--allow-skip` acknowledges it — seven Flutter apps once drifted for
+months behind a skip that exited 0. A true absence (no Flutter package at all)
+prints `N/A` and never fails; the two are deliberately kept apart.
+
+`scripts/consistency.mjs` verifies the token that identifies a product: the
+accent. The field audit found one product carrying four accents across its
+surfaces, two of them byte-identical to a sibling product's — so two separate
+products rendered the same. It fails on surfaces of one product disagreeing, on
+two products sharing an accent, and on a hex accent under a Tailwind
+`hsl(var(--accent))` wrapper, which silently breaks every opacity modifier.
 
 `scripts/contrast.mjs` gates the palette at freeze time rather than at review.
 pro-max palettes are not contrast-safe — its own CRM palette pairs `#FFFFFF` on
@@ -155,8 +168,11 @@ component with a hardcoded `#3B82F6` passes a token check trivially, because
 the token check never sees the component. Precision is the design constraint:
 `hsl(var(--token))`, a labelled input, a `role`+`tabIndex`+key-handler div and
 Arial as a fallback are all explicitly exempt, because a linter that fires on
-correct code is one people learn to skip. Three of its eleven rules serve the
-hero: `100vh` where `100svh` was meant, `three` imported into a Next route file
+correct code is one people learn to skip. `tailwind-palette-class` closes the
+gate's largest blind spot — `bg-gray-900` is as frozen as `#111827` and breaks
+dark mode identically, and the measured suite had ~18,300 of them against
+~3,000 hex findings; it ships as a warning for one release so a live suite is
+not red on day one. Three of its other rules serve the hero: `100vh` where `100svh` was meant, `three` imported into a Next route file
 instead of behind `next/dynamic`, and a canvas animation with no
 `prefers-reduced-motion` path — the last catching a hand-rolled 2D particle
 loop as well as WebGL, since a rule that only knew about `three` would miss the
@@ -169,7 +185,7 @@ common than a hex because it reads like an API rather than a literal),
 `Image.*` with neither `semanticLabel` nor `excludeFromSemantics`, and a
 `GestureDetector` tap handler that exposes no role to a screen reader.
 
-`scripts/responsive-check.mjs` loads the page in Chromium at 320, 768 and 1280
+`scripts/responsive-check.mjs` loads the page in Chromium at 320, 768 and 1440
 in both colour schemes, plus **740×360 — a phone held sideways**, which is the
 only probe short enough to catch a `height: 100vh` hero eating its own CTA. It
 catches what reading a stylesheet cannot: a fixed-width element pushing the page

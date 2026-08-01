@@ -23,15 +23,26 @@ const script = (name) => join(HERE, name);
 
 export const PASS = 'PASS';
 export const FAIL = 'FAIL';
+// SKIP means "could not run" — a gap in the run, and a gap fails the gate
+// unless --allow-skip acknowledges it. NA means "nothing to check" — no
+// Flutter package exists, so there is no token copy to drift. The two must not
+// read the same: the field case behind this was seven Flutter apps whose
+// generated tokens.dart was missing, hand-drifted palettes in its place, and a
+// gate that skipped the step silently on every run.
 export const SKIP = 'SKIP';
+export const NA = 'N/A ';
 
 // responsive-check exits 3 when Playwright is absent — a step that could not
 // run, not a step that failed. Every other non-zero exit is a real failure,
 // including 2: bad input means the gate was pointed at the wrong thing, and
 // silently passing that is how a directory nobody scanned reads as clean.
-export function classify(status, { skipStatus } = {}) {
+export function classify(status, { skipStatus, naStatus } = {}) {
   if (status === 0) return PASS;
   if (skipStatus !== undefined && status === skipStatus) return SKIP;
+  // Some scripts can report "nothing here to check" — consistency.mjs exits 3
+  // on a single-carrier project. That is an absence, not a gap, so it must not
+  // fail the gate the way a SKIP now does.
+  if (naStatus !== undefined && status === naStatus) return NA;
   return FAIL;
 }
 
@@ -134,9 +145,11 @@ if (isMain) {
   const url = flag('--url');
   const srcArg = flag('--src');
 
+  const allowSkip = args.includes('--allow-skip');
   const steps = [];
   const add = (name, target, result) => steps.push({ name, target, ...result });
   const skip = (name, target, why) => steps.push({ name, target, status: SKIP, output: why });
+  const na = (name, target, why) => steps.push({ name, target, status: NA, output: why });
 
   // 0. Was the domain ever written down? Only when asked for.
   //
@@ -181,8 +194,14 @@ if (isMain) {
       'a Flutter package is here but its tokens were never generated — run ' +
       'tokens-dart.mjs, or the app and the website drift apart');
   } else {
-    skip('tokens.dart', '—', 'no Flutter package found');
+    // A true absence, not a gap: with no Flutter package there is no token
+    // copy to drift, so this never fails the gate.
+    na('tokens.dart', '—', 'no Flutter package found');
   }
+
+  // 3b. The accent still identifies the product — surfaces agree, no sibling
+  // product shares it, and the value fits how the Tailwind config wraps it.
+  add('consistency', '.', run('consistency.mjs', ['.'], { naStatus: 3 }));
 
   // 4. The code actually consumes the tokens.
   const srcDirs = srcArg ? [srcArg] : surfaceDirs('.');
@@ -208,7 +227,7 @@ if (isMain) {
   console.log('');
   for (const s of steps) {
     const first = (s.output ?? '').split('\n').filter(Boolean).pop() ?? '';
-    console.log(`  ${s.status}  ${s.name.padEnd(width)}  ${s.target}`);
+    console.log(`  ${s.status.padEnd(4)}  ${s.name.padEnd(width)}  ${s.target}`);
     if (s.status !== PASS || verbose) console.log(`        ${first}`);
   }
 
@@ -221,18 +240,22 @@ if (isMain) {
 
   console.log(
     `\n${steps.length} step(s): ${steps.filter((s) => s.status === PASS).length} passed, ` +
-    `${failed.length} failed, ${skipped.length} skipped.`);
+    `${failed.length} failed, ${skipped.length} skipped, ` +
+    `${steps.filter((s) => s.status === NA).length} not applicable.`);
 
-  if (skipped.length > 0) {
-    // Said every time, because the failure mode this file exists to prevent is
-    // a partial run reported as a clean one.
-    console.log(
-      `\n${skipped.length} step(s) did not run. They are not passes — check ` +
-      'them by hand, or supply what they need and re-run.');
-  }
   if (failed.length > 0) {
     console.log('\nThe gate failed. Fix the findings above and re-run.');
     process.exit(1);
+  }
+  if (skipped.length > 0) {
+    // SKILL.md says twice that a skipped step is never a pass; until this, the
+    // exit code disagreed and seven Flutter apps drifted behind a silent skip.
+    console.log(
+      `\n${skipped.length} step(s) could not run, and a gap is not a pass. ` +
+      (allowSkip
+        ? 'Acknowledged with --allow-skip — check them by hand.'
+        : 'Supply what they need and re-run, or acknowledge with --allow-skip.'));
+    process.exit(allowSkip ? 0 : 1);
   }
   process.exit(0);
 }
