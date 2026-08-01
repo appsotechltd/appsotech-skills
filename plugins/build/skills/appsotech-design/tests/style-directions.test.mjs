@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { contrastRatio, TEXT_MIN, UI_MIN } from '../scripts/contrast.mjs';
+import { contrastRatio, parseColor, TEXT_MIN, UI_MIN } from '../scripts/contrast.mjs';
 
 // style-directions.md states that every palette in it is contrast-verified.
 // Until this file existed that was an assertion, not a guarantee: the original
@@ -14,7 +14,10 @@ const DOC = readFileSync(
   join(import.meta.dirname, '..', 'references', 'style-directions.md'), 'utf8');
 
 // Each direction is `## <n>. <Name>` followed by a table whose rows are
-// `| token | \`#LIGHT\` | \`#DARK\` |`.
+// `| token | \`H S% L%\` (#HEX) | \`H S% L%\` (#HEX) |` — the backticked HSL
+// triple is the value to paste, the hex is the human-readable label.
+const CELL = '`(-?[\\d.]+ [\\d.]+% [\\d.]+%)` \\((#[0-9A-Fa-f]{6})\\)';
+const ROW_RE = new RegExp(`^\\|\\s*([a-z-]+)\\s*\\|\\s*${CELL}\\s*\\|\\s*${CELL}\\s*\\|`, 'gm');
 function parseDirections(md) {
   const directions = [];
   const sections = md.split(/^## /m).slice(1);
@@ -23,17 +26,19 @@ function parseDirections(md) {
     if (!/^\d+\.\s/.test(name)) continue; // skip "How to use", "Choosing"
     const light = {};
     const dark = {};
-    for (const row of section.matchAll(
-      /^\|\s*([a-z-]+)\s*\|\s*`(#[0-9A-Fa-f]{6})`\s*\|\s*`(#[0-9A-Fa-f]{6})`\s*\|/gm,
-    )) {
+    const labels = { light: {}, dark: {} };
+    for (const row of section.matchAll(ROW_RE)) {
       light[row[1]] = row[2];
-      dark[row[1]] = row[3];
+      labels.light[row[1]] = row[3];
+      dark[row[1]] = row[4];
+      labels.dark[row[1]] = row[5];
     }
     const fonts = section.match(/\*\*Type\*\*\s+([^·]+)·/);
     directions.push({
       name,
       light,
       dark,
+      labels,
       fonts: fonts ? fonts[1].trim() : null,
       hasSignature: /\*\*Signature\*\*/.test(section),
     });
@@ -104,6 +109,35 @@ test('every focus ring meets 3:1 against its background', () => {
   assert.deepEqual(failures, [], `rings below ${UI_MIN}:1`);
 });
 
+test('every palette value is an HSL triple, never a hex', () => {
+  // The token architecture consumes hsl(var(--token) / <alpha-value>), and a
+  // pasted hex kills every opacity modifier — silently where the config
+  // wraps, loudly where it does not, so the failure is inconsistent across
+  // surfaces. This is the tier-3 engine; it must hand out the correct form.
+  for (const d of DIRECTIONS) {
+    for (const mode of ['light', 'dark']) {
+      for (const [token, value] of Object.entries(d[mode])) {
+        assert.doesNotMatch(value, /^#/, `${d.name}/${mode} --${token} is a hex`);
+        assert.match(value, /^-?[\d.]+ [\d.]+% [\d.]+%$/,
+          `${d.name}/${mode} --${token}: "${value}" is not a bare HSL triple`);
+      }
+    }
+  }
+});
+
+test('the hex label renders exactly what the triple renders', () => {
+  // The hex exists for human reading. If it disagreed with the triple, the
+  // document would show one colour and paste another — worse than no label.
+  for (const d of DIRECTIONS) {
+    for (const mode of ['light', 'dark']) {
+      for (const [token, value] of Object.entries(d[mode])) {
+        assert.deepEqual(parseColor(value), parseColor(d.labels[mode][token]),
+          `${d.name}/${mode} --${token}: triple "${value}" != label ${d.labels[mode][token]}`);
+      }
+    }
+  }
+});
+
 test('light and dark are genuinely different palettes', () => {
   // A direction whose dark block repeats its light block is a direction with
   // no dark mode, and dark mode is a hard requirement on every surface.
@@ -154,12 +188,12 @@ test('the parser would notice a broken palette rather than skipping it', () => {
 ## 1. Broken
 | Token | Light | Dark |
 |---|---|---|
-| background | \`#FFFFFF\` | \`#000000\` |
-| foreground | \`#EEEEEE\` | \`#111111\` |
+| background | \`0 0% 100%\` (#FFFFFF) | \`0 0% 0%\` (#000000) |
+| foreground | \`0 0% 93%\` (#EDEDED) | \`0 0% 7%\` (#121212) |
 
 **Type** Space Grotesk / Work Sans · **Signature** none.
 `);
   assert.equal(broken.length, 1);
-  assert.equal(broken[0].light.foreground, '#EEEEEE');
+  assert.equal(broken[0].light.foreground, '0 0% 93%');
   assert.ok(contrastRatio(broken[0].light.foreground, broken[0].light.background) < TEXT_MIN);
 });
