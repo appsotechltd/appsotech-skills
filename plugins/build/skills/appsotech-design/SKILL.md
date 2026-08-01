@@ -154,6 +154,13 @@ done
 | 2 | Not found, skill installed | Invoke `ui-ux-pro-max` by name; ask for style, palette, font pairing. |
 | 3 | Neither, or no Python | Read `references/style-directions.md`, proceed, and **tell the user** the engine was unavailable. |
 
+**Tier 3 is the default operating mode, not the exception.** Remote and
+headless sessions — the normal case — rarely have pro-max installed, so
+`style-directions.md` is the working aesthetic engine most of the time, and it
+is written to that standard: triples ready to paste, candidates per sector, a
+suite-uniqueness rule. Treat tiers 1–2 as the upgrade when available, not the
+baseline.
+
 **Never fail the build over this.** Only style *breadth* degrades — 84 styles
 down to 12 curated directions. Tokens, the accessibility floor, the patterns
 and the gate are vendored and identical in all three tiers.

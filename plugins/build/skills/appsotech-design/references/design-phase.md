@@ -114,7 +114,7 @@ Note the plugin installs several sibling skills (`design`, `design-system`,
 `brand`, `banner-design`, `slides`, `ui-styling`). Name `ui-ux-pro-max`
 specifically.
 
-## Tier 3 — no engine
+## Tier 3 — no engine, and the normal case
 
 Read `references/style-directions.md` and choose from the twelve directions
 there. Every palette in that file is already contrast-checked, so the filters
