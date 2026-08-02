@@ -1,0 +1,26 @@
+{
+  "name": "design",
+  "description": "Design and build user interfaces against a frozen, accessibility-gated design system — style direction, palette, font pairing, design tokens, light and dark mode, responsive layout, motion, hero treatments, eight page archetypes, and a mechanical gate that checks the result in a real browser. Stack-agnostic: React, Next.js, Vue, Svelte, Flutter, plain HTML or a single file",
+  "version": "1.0.0",
+  "author": {
+    "name": "Appsotech Limited",
+    "email": "appsotechltd@gmail.com"
+  },
+  "homepage": "https://github.com/appsotechltd/appsotech-skills",
+  "repository": "https://github.com/appsotechltd/appsotech-skills",
+  "license": "MIT",
+  "keywords": [
+    "design",
+    "ui",
+    "ux",
+    "design-tokens",
+    "design-system",
+    "accessibility",
+    "wcag",
+    "dark-mode",
+    "responsive",
+    "tailwind",
+    "archetypes",
+    "skills"
+  ]
+}

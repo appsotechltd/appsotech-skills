@@ -5,14 +5,25 @@ Skills for Claude Code, published by Appsotech Limited.
 ## Install as a plugin
 
     /plugin marketplace add appsotechltd/appsotech-skills
-    /plugin install audit@appsotech
-    /plugin install build@appsotech
+    /plugin install design@appsotech    # design and UI, on any stack
+    /plugin install build@appsotech     # the Appsotech house stack
+    /plugin install audit@appsotech     # the 13-layer audit
+
+Three plugins, installable independently. **`design` is the one most people
+want on its own** — design work far outnumbers scaffolding work, and it is
+stack-agnostic. `build` reads it at its design phases, so install both if you
+want a whole project covered; the dependency points one way and never back.
+
+If you installed `build` before the split and cannot see `appsotech-design`,
+refresh the marketplace first — a cached copy predates the plugin existing:
+
+    /plugin marketplace update appsotech
 
 ## Install by copying
 
-    cp -r plugins/audit/skills/appsotech-audit ~/.claude/skills/
+    cp -r plugins/design/skills/appsotech-design ~/.claude/skills/
     cp -r plugins/build/skills/appsotech-dev ~/.claude/skills/
-    cp -r plugins/build/skills/appsotech-design ~/.claude/skills/
+    cp -r plugins/audit/skills/appsotech-audit ~/.claude/skills/
 
 `appsotech-dev` reads `appsotech-design` at its design phases, so copy both
 if you want a whole project covered. `appsotech-design` on its own is a
@@ -20,9 +31,9 @@ complete skill and needs nothing else.
 
 On Windows (PowerShell):
 
-    Copy-Item -Recurse plugins\audit\skills\appsotech-audit $HOME\.claude\skills\
+    Copy-Item -Recurse plugins\design\skills\appsotech-design $HOME\.claude\skills\
     Copy-Item -Recurse plugins\build\skills\appsotech-dev $HOME\.claude\skills\
-    Copy-Item -Recurse plugins\build\skills\appsotech-design $HOME\.claude\skills\
+    Copy-Item -Recurse plugins\audit\skills\appsotech-audit $HOME\.claude\skills\
 
 ## Skills
 
@@ -89,9 +100,11 @@ of that should have to load a Go and Coolify manual to get at a palette. It is
 stack-agnostic — React, Next.js, Vue, Svelte, Flutter, plain HTML or a single
 file — so it also works on projects that are not on the house stack at all.
 
-The two are split so that nothing is duplicated: `appsotech-dev` resolves the
-design skill by path and reads it, rather than carrying its own copy of the
-precedence table. Two copies of a rule is how the two copies come to disagree.
+It is its **own plugin**, `design@appsotech`, installable without the house
+stack — most sessions want the palette and the gate, not a Go and Coolify
+manual. Nothing is duplicated between them: `appsotech-dev` resolves this
+skill by path and reads it rather than carrying its own copy of the precedence
+table, because two copies of a rule is how the two copies come to disagree.
 
 Two authorities that do not overlap: [`ui-ux-pro-max`][promax] generates style,
 palette and font pairing; the vendored `elite-frontend-ux` owns token

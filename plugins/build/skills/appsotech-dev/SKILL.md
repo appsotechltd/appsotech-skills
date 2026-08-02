@@ -70,10 +70,15 @@ for base in \
 done
 SCAFFOLD="$SCRIPTS/scaffold.mjs"
 
+# appsotech-design ships as its own plugin, so it is a SIBLING of this one
+# rather than a folder inside it. The first entry covers an older install
+# where it was bundled here; the rest cover the split.
 for base in \
-  "$CLAUDE_PLUGIN_ROOT/skills/appsotech-design" \
+  "$CLAUDE_PLUGIN_ROOT/../design/skills/appsotech-design" \
+  "$HOME/.claude/plugins/"*"/design/skills/appsotech-design" \
   "$HOME/.claude/skills/appsotech-design" \
-  ".claude/skills/appsotech-design"; do
+  ".claude/skills/appsotech-design" \
+  "$CLAUDE_PLUGIN_ROOT/skills/appsotech-design"; do
   [ -f "$base/SKILL.md" ] && DESIGN="$base" && break
 done
 GATE="$DESIGN/scripts/gate.mjs"
@@ -81,8 +86,10 @@ echo "stack ${SCRIPTS:-NOT FOUND} / design ${DESIGN:-NOT FOUND}"
 ```
 
 **Read `$DESIGN/SKILL.md` before Phase 5** and follow it for Phases 5–7's
-design work. The two ship together in the `build` plugin, so a plugin install
-has both; a copy install needs both folders.
+design work. They are **two plugins now** — `/plugin install design@appsotech`
+alongside `build@appsotech`, or copy both folders. Design work far outnumbers
+scaffolding work, so the design skill is installable on its own; this skill is
+the one that depends on it, never the reverse.
 
 If `$DESIGN` did not resolve, **say so and stop the design phases** rather than
 improvising a palette from memory. Scaffolding and backend work carry on
