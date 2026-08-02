@@ -19,6 +19,16 @@ refresh the marketplace first — a cached copy predates the plugin existing:
 
     /plugin marketplace update appsotech
 
+No shell, no plugin manager? There is a single-file copy at
+[`dist/appsotech-design.md`](dist/appsotech-design.md) — the skill plus all
+nine references in one document, ~2,400 lines. It drops in as a `SKILL.md`
+anywhere, and it is generated rather than hand-maintained, with a test that
+fails if it drifts from the directory.
+
+**It cannot carry the scripts**, so every `[auto]` gate item becomes a by-hand
+check — the file says so in its own header. Prefer the directory whenever you
+can run it; the gate is the difference between this and generic design advice.
+
 ## Install by copying
 
     cp -r plugins/design/skills/appsotech-design ~/.claude/skills/
