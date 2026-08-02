@@ -225,8 +225,9 @@ turn a red gate green.
 | `references/hero.md` | a hero section — particles, 3D, a full-screen treatment or a hero image |
 
 The archetypes are why a sign-in page comes out as a 50/50 split and a hero
-comes out on the dark token scope **without being asked** — those are the
-defaults, and departing from one is recorded in `design/overrides.md`.
+comes out on a surface that stands out from the page **without being asked** —
+a tint in light mode, the dark scope in dark mode — and departing from a
+default is recorded in `design/overrides.md`.
 
 Three rules apply to everything built here:
 

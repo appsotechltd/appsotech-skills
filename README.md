@@ -134,7 +134,8 @@ Seven scripts make it mechanical rather than aspirational; **27 checklist items
 are marked `[auto]`**, and the rest stay human because they are judgement
 calls, not leftovers. The newest layer is **composition**: eight page
 archetypes in `references/archetypes.md` — auth as a 50/50 split rather than a
-floating card, heroes on the dark token scope by default — and a `sparse-page`
+floating card, heroes on a standout surface (a tint in light mode, the dark
+scope in dark mode) — and a `sparse-page`
 check that measures whether a page actually uses its viewport, because a 400px
 card in an empty 1440×900 viewport passes every element check and is still an
 unfinished page.

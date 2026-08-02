@@ -7,8 +7,9 @@ It is not a licence for 3D elsewhere. A canvas anywhere but a hero needs a
 reason that is not "it looks good" — see `motion.md`'s frequency gate.
 
 This file owns **treatment, engine and budget**. The hero's *composition* — the
-dark token scope default, the rhythm rule that the next section must be light,
-and the fold requirement — lives in `archetypes.md` §2. The two do not overlap.
+standout-surface rule (a tint in light mode, the dark scope in dark mode), the
+rhythm rule that the next section must contrast, and the fold requirement —
+lives in `archetypes.md` §2. The two do not overlap.
 
 ## The four treatments
 

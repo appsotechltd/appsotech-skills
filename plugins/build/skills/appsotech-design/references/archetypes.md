@@ -48,18 +48,33 @@ in `design/overrides.md`.
 
 ## 2. Hero / landing
 
-**The hero runs on the dark token scope by default, in both themes.**
+**The hero's background stands out from the rest of the page — in both
+themes.** A hero on the same surface as everything below it is a heading, not
+a hero.
 
-Not "a darker background colour" — the whole dark block:
+How it stands out differs by theme:
+
+- **Light mode — a distinct surface, not necessarily dark.** The default is a
+  tinted surface from the existing tokens: `--muted`, or an accent wash via
+  the opacity modifiers the HSL triples exist for (`bg-accent/10`). The dark
+  token scope is an available choice when the product wants the drama, not the
+  default.
+- **Dark mode — the dark scope, near-black, is the answer.** The page is
+  already dark, so the hero stands out by being the *deepest* surface — the
+  direction's dark `--background` — with the section below it lifted on
+  `--muted`.
+
+**If the hero does go dark in light mode, it carries the whole dark block —
+never a dark background under light-mode tokens:**
 
 ```html
 <section data-theme="dark" class="bg-background text-foreground">
 ```
 
 THIS IS LOAD-BEARING. In a Swiss-derived system the primary action is ink, not
-colour, so `--primary` is near-black. A dark background carrying light-mode
-tokens renders the primary CTA against its own background at 1.02:1 — it
-disappears. Measured on a representative product:
+colour, so light-mode `--primary` is near-black. A dark background carrying
+light-mode tokens renders the primary CTA against its own background at
+1.02:1 — it disappears. Measured on a representative product:
 
 ```
 dark hero + light-mode tokens
@@ -71,27 +86,32 @@ dark hero + the existing dark-mode tokens
   --foreground ..................... 17.84:1   pass
 ```
 
-The dark-mode accent and foreground are already tuned for this surface. **No
-new palette values are needed and the freeze is untouched** — this is
-composition, not colour.
+A muted or accent-wash hero has no such hazard — its surface is near
+`--background`, so the light tokens it sits under are the right ones. That is
+why the tint is the light-mode default: it stands out without switching scope.
+**No new palette values in either treatment, and the freeze is untouched** —
+this is composition, not colour.
 
-**RHYTHM:** the section immediately following a dark hero must be light. Two
-dark bands in sequence merge into one mass and the page loses its first
-transition. Check this whenever a hero is changed.
+**RHYTHM:** the section immediately following the hero must contrast with it —
+plain `--background` after a tinted or dark hero. Two same-surface bands in
+sequence merge into one mass and the page loses its first transition. Check
+this whenever a hero is changed.
 
 **CANVAS:** if the product has an ambient canvas treatment it belongs here.
-Particle and line treatments read substantially better on dark, which is a
-second reason for this default. Which treatment, which engine, and what it may
-cost stay `hero.md`'s — that file owns treatment and budget; this section owns
-the token scope and the composition around it.
+Particle and line treatments read substantially better on dark, which is the
+main reason to *choose* the dark option in light mode. Which treatment, which
+engine, and what it may cost stay `hero.md`'s — that file owns treatment and
+budget; this section owns the surface and the composition around it.
 
-**FORBIDDEN:** a full-bleed hero whose CTA sits below the fold at 1440×900 —
+**FORBIDDEN:** a hero on plain `--background` with nothing distinguishing its
+surface, and a full-bleed hero whose CTA sits below the fold at 1440×900 —
 headline, one line of sub and the primary action are all visible without
 scrolling.
 
-**ESCAPE:** a product whose accent is light-on-dark by construction keeps a
-light hero. Record it in `design/overrides.md` **with the measured contrast
-numbers**, not just the decision.
+**ESCAPE:** a hero that is a full-bleed image (the image *is* the standout
+surface) needs no tint or scope switch — but text over it sits on a scrim per
+`hero.md`. Record any other deviation in `design/overrides.md` with measured
+contrast numbers, not just the decision.
 
 ## 3. Dashboard / overview
 
